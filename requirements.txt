@@ -1,0 +1,16 @@
+# SQL Server and data processing
+sqlalchemy==2.0.40
+pyodbc==5.2.0
+pandas==2.2.3
+numpy==2.0.2
+
+# Azure OpenAI API
+openai==1.70.0
+azure-core==1.32.0
+azure-identity==1.21.0
+
+# Environment and utilities
+python-dotenv==1.0.0
+
+# Additional dependencies
+pytest==7.4.3

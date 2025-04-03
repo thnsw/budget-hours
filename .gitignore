@@ -1,0 +1,12 @@
+.env
+.venv
+.cursorignore
+.cursorindexingignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw

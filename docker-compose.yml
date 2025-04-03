@@ -1,0 +1,21 @@
+services:
+  billable-hours-classifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: billable-hours-classifier
+    volumes:
+      - ./src:/app/src
+      - ./output:/app/output
+      - ./.env:/app/.env
+    environment:
+      - SQL_SERVER=${SQL_SERVER:-server.database.windows.net}
+      - SQL_DATABASE=${SQL_DATABASE:-your_database}
+      - SQL_USERNAME=${SQL_USERNAME:-username}
+      - SQL_PASSWORD=${SQL_PASSWORD:-password}
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT:-https://your-resource-name.openai.azure.com/}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-your-api-key}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
+    command: ["--summary", "--output", "/app/output/classified_hours.csv", "--summary-output", "/app/output/summary_report.txt"]
+    restart: "no" 
