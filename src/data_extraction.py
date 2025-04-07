@@ -36,53 +36,52 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
     
     # Query to extract data for February 2025 with all relevant information
     query = """
-    WITH LatestBillableEntries AS (
-        SELECT
-            f.Hours,
-            f.Date,
-            p.ProjectID,
-            p.ProjectName,
-            t.TaskName,
-            p.IsBillable AS ProjectIsBillable,
-            c.CustomerName,
-            d.DescriptionID AS Description,
-            f.BillableAmount,
-            f.BillableRate,
-            f.IsBillableKey,
-            f.IsApprovedKey,
-            e.EmployeeName,
-            f.DW_ID,
-            f.DW_Batch_Created,
-            ROW_NUMBER() OVER (PARTITION BY f.DW_ID ORDER BY f.DW_Batch_Created DESC) AS RowNum
-        FROM
-            [PowerBIData].[vPowerBiData_Harvest_Harvest_data_All] f
-        JOIN
-            [PowerBIData].[DimProject_Tabular_Flat] p ON f.ProjectKey = p.ProjectKey
-        JOIN
-            [PowerBIData].[DimCustomer_Tabular_Flat] c ON f.CustomerKey = c.CustomerKey
-        JOIN
-            [PowerBIData].[DimOrganization_Tabular_Flat] o ON f.OrganizationKey = o.OrganizationKey
-        JOIN
-            [PowerBIData].[DimDescription] d ON f.DescriptionKey = d.DescriptionKey
-        JOIN
-            [PowerBIData].[DimTask_Tabular_Flat] t on f.TaskKey = t.TaskKey
-        JOIN
-            [PowerBIData].[DimPeriod] period ON f.Period = period.Period
-        LEFT JOIN
-            (SELECT DISTINCT EmployeeKey, EmployeeName FROM [PowerBIData].[DimEmployee_Tabular_Flat]) e ON f.EmployeeKey = e.EmployeeKey
+	WITH LatestBillableEntries AS (
+		SELECT
+			f.Hours,
+			f.Date,
+			p.ProjectID,
+			p.ProjectName,
+			t.TaskName,
+			p.IsBillable AS ProjectIsBillable,
+			c.CustomerName,
+			d.DescriptionID AS Description,
+			f.BillableAmount,
+			f.BillableRate,
+			f.IsBillableKey,
+			f.IsApprovedKey,
+			e.EmployeeName,
+			f.DW_ID,
+			f.DW_Batch_Created,
+			ROW_NUMBER() OVER (PARTITION BY f.DW_ID ORDER BY f.DW_Batch_Created DESC) AS RowNum
+		FROM
+			[PowerBIData].[vPowerBiData_Harvest_Harvest_data_All] f
+		JOIN
+			[PowerBIData].[DimProject_Tabular_Flat] p ON f.ProjectKey = p.ProjectKey
+		JOIN
+			[PowerBIData].[DimCustomer_Tabular_Flat] c ON f.CustomerKey = c.CustomerKey
+		JOIN
+			[PowerBIData].[DimOrganization_Tabular_Flat] o ON f.OrganizationKey = o.OrganizationKey
+		JOIN
+			[PowerBIData].[DimDescription] d ON f.DescriptionKey = d.DescriptionKey
+		JOIN
+			[PowerBIData].[DimTask_Tabular_Flat] t on f.TaskKey = t.TaskKey
+		JOIN
+			[PowerBIData].[DimPeriod] period ON f.Period = period.Period
+		LEFT JOIN
+			(SELECT DISTINCT EmployeeKey, EmployeeName FROM [PowerBIData].[DimEmployee_Tabular_Flat]) e ON f.EmployeeKey = e.EmployeeKey
 		WHERE
 			Hours > 0
-    )
-    SELECT * FROM LatestBillableEntries
-    WHERE
-        RowNum = 1
-        AND Date like '202503%'
-        --AND IsBillableKey = 1
-        AND EmployeeName like 'THN %'
-        --AND ProjectName = 'CV2 - Dawn'
-        --AND Hours > 0
-        --AND IsApprovedKey = 0
-        --AND DW_ID = 2617911362
+	)
+	SELECT * FROM LatestBillableEntries
+	WHERE
+		RowNum = 1
+		AND Date like '20250403'
+		AND ProjectName = 'Conscia Support'
+		--AND Hours > 0
+		--AND IsBillableKey = 1
+		--AND IsApprovedKey = 0
+		--AND DW_ID = 2617911362
     """
     
     if limit:
@@ -131,15 +130,15 @@ def extract_data_for_classification() -> List[Dict[Any, Any]]:
             "hours": entry.get("Hours"),
             "description": description,
             "project_is_billable": entry.get("ProjectIsBillable"),
-            "TaskName": entry.get("TaskName"),
-            "BillableAmount": entry.get("BillableAmount"),
-            "Date": entry.get("Date"),
+            "task_name": entry.get("TaskName"),
+            "billable_amount": entry.get("BillableAmount"),
+            "date": entry.get("Date"),
             # Include all original fields to ensure no data is lost
-            "ProjectID": entry.get("ProjectID"),
-            "DW_ID": entry.get("DW_ID"),
-            # Store actual values for later comparison but don't include in LLM input
-            "_is_billable_key": entry.get("IsBillableKey"),
-            "_is_approved_key": entry.get("IsApprovedKey")
+            "project_id": entry.get("ProjectID"),
+            "dw_id": entry.get("DW_ID"),
+            "is_billable_key": entry.get("IsBillableKey"),
+            # Store actual value for later comparison but don't include in LLM input
+            "is_approved_key": entry.get("IsApprovedKey")
         }
         classification_data.append(formatted_entry)
     

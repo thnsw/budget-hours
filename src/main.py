@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from data_extraction import extract_hours_data, extract_data_for_classification
 from llm_classifier import classify_batch
-from output_generator import generate_csv_output, generate_summary_report, evaluate_classification_performance
+from output_generator import generate_csv_output, generate_summary_report
 
 def setup_parser() -> argparse.ArgumentParser:
     """Set up command line argument parser"""
@@ -63,7 +63,7 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=10,
+        default=100,
         help="Batch size for API rate limiting"
     )
     
@@ -71,12 +71,6 @@ def setup_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Run without making actual API calls (for testing)"
-    )
-    
-    parser.add_argument(
-        "--evaluate",
-        action="store_true",
-        help="Print detailed evaluation metrics comparing predictions with actual values"
     )
     
     return parser
@@ -98,7 +92,7 @@ def load_csv_data(file_path: str) -> List[Dict[str, Any]]:
     except Exception as e:
         raise Exception(f"Error loading CSV data: {str(e)}")
 
-def mock_classify_batch(data: List[Dict[str, Any]], batch_size: int = 10) -> List[Dict[str, Any]]:
+def mock_classify_batch(data: List[Dict[str, Any]], batch_size: int = 100) -> List[Dict[str, Any]]:
     """Mock classification function for dry runs"""
     print("DRY RUN: Mocking LLM classification")
     results = []
@@ -160,18 +154,6 @@ def run_pipeline(args: argparse.Namespace) -> None:
         
         # Generate output
         output_path = generate_csv_output(classified_data, output_path=args.output)
-        
-        # Evaluate performance if requested
-        if args.evaluate:
-            metrics, confusion_matrix = evaluate_classification_performance(classified_data)
-            print("\nClassification Performance Metrics:")
-            print(f"Accuracy: {metrics.get('accuracy', 'N/A')}")
-            print(f"Precision: {metrics.get('precision', 'N/A')}")
-            print(f"Recall: {metrics.get('recall', 'N/A')}")
-            print(f"F1 Score: {metrics.get('f1_score', 'N/A')}")
-            print(f"Human-LLM Agreement: {metrics.get('human_agreement', 'N/A')}")
-            print("\nConfusion Matrix:")
-            print(confusion_matrix)
         
         # Generate summary if requested
         if args.summary:
