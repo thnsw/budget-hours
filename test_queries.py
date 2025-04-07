@@ -16,7 +16,7 @@ WITH LatestBillableEntries AS (
         e.EmployeeName,
         f.DW_Batch_Created,
 		f.DW_ID,
-        ROW_NUMBER() OVER (PARTITION BY f.Date, f.DW_ID, e.EmployeeName, t.TaskName ORDER BY f.DW_Batch_Created DESC) AS RowNum
+        ROW_NUMBER() OVER (PARTITION BY f.DW_ID, f.Date, e.EmployeeName, t.TaskName ORDER BY f.DW_Batch_Created DESC) AS RowNum
     FROM 
         [PowerBIData].[vPowerBiData_Harvest_Harvest_data_All] f
     JOIN 
@@ -34,16 +34,15 @@ WITH LatestBillableEntries AS (
     LEFT JOIN
         (SELECT DISTINCT EmployeeKey, EmployeeName FROM [PowerBIData].[DimEmployee_Tabular_Flat]) e ON f.EmployeeKey = e.EmployeeKey
     WHERE 
-        period.YearName = '2024' AND 
-        period.MonthName = 'Dec' AND 
-        o.OrganizationID = 'SWDK' AND 
-        p.IsBillable = 'Yes' AND
-        --e.EmployeeName = 'JET - Jan Ettema' AND 
+        period.YearName = '2024' 
+        AND period.MonthName = 'Dec' 
+        AND o.OrganizationID = 'SWDK'
+        AND p.IsBillable = 'Yes' 
+        --AND e.EmployeeName = 'JET - Jan Ettema' 
         --p.ProjectName = 'Support Finance' AND 
         --f.Date = '20241204' AND
-        f.BillableAmount > 0 AND
-		f.IsApprovedKey = 0
-		
+        AND f.BillableAmount > 0
+		-- AND f.IsApprovedKey = 0		
 )
 SELECT * FROM LatestBillableEntries WHERE RowNum = 1
 order by Date desc
