@@ -401,10 +401,13 @@ class PDFReportGenerator:
                 
                 # Add data for each disapproved entry
                 for entry in disapproved_entries:
+                    # Limit Employee name to 3 characters
+                    employee_name = entry.get('employee_name', '')[:3]
+
                     # Limit explanation length to fit in table cell
                     explanation = entry.get('classification_reasoning', '')
-                    if len(explanation) > 80:
-                        explanation = explanation[:77] + "..."
+                    #if len(explanation) > 80:
+                        #explanation = explanation[:77] + "..."
                     
                     # Limit description length to fit in table cell
                     description = entry.get('description', '')
@@ -412,13 +415,12 @@ class PDFReportGenerator:
                         description = description[:32] + "..."
                         
                     disapproved_data.append([
-                        entry.get('employee_name', 'Unknown'),
+                        employee_name,
                         str(entry.get('date', 'N/A')),
                         f"{float(entry.get('hours', 0)):.2f}",
                         description,
                         explanation
                     ])
-                    print(f"disapproved_data: {disapproved_data}")
                 
                 with pdf.table(
                     col_widths=disapproved_col_widths,

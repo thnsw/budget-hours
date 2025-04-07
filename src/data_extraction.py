@@ -34,7 +34,8 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
     """
     engine = create_connection()
     
-    # Query to extract data for February 2025 with all relevant information
+    # Query to extract latest updated registered hour using DW_ID and newest DW_Batch_Created. 
+    # Hours is greater than 0 to avoid latest negation post.
     query = """
 	WITH LatestBillableEntries AS (
 		SELECT
