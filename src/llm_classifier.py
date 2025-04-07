@@ -195,14 +195,14 @@ def format_classification_prompt(hour_entry: Dict[str, Any]) -> str:
     Employee: {hour_entry.get('employee_name')}
     Project: {hour_entry.get('project_name')}
     Customer: {hour_entry.get('customer_name')}
-    Task: {hour_entry.get('TaskName')}
+    Task: {hour_entry.get('task_name')}
     Hours: {hour_entry.get('hours')}
-    Is Billable: {hour_entry.get('ProjectIsBillable')}
-    Billable Amount: {hour_entry.get('BillableAmount')}
+    Project Is Billable: {hour_entry.get('project_is_billable')}
+    Billable Amount: {hour_entry.get('billable_amount')}
     Description: {hour_entry.get('description')}
     """
 
-def classify_batch(hours_data: List[Dict[str, Any]], batch_size: int = 10) -> List[Dict[str, Any]]:
+def classify_batch(hours_data: List[Dict[str, Any]], batch_size: int = 100) -> List[Dict[str, Any]]:
     """
     Classify a batch of hours data with rate limiting
     
@@ -229,10 +229,10 @@ def classify_batch(hours_data: List[Dict[str, Any]], batch_size: int = 10) -> Li
             
             results.append(classified_entry)
             
-            # Simple rate limiting - pause after each batch
+            # Simple batch progress logging without rate limiting
+            # gpt-4o-mini can handle 12K requests per minute (Default tier) or 300K requests per minute (Enterprise tier)
             if (i + 1) % batch_size == 0 and i < len(hours_data) - 1:
-                print(f"Processed {i + 1}/{len(hours_data)} entries. Pausing for rate limiting...")
-                time.sleep(2)
+                print(f"Processed {i + 1}/{len(hours_data)} entries.")
                 
         except ClassificationError as e:
             print(f"Error classifying entry {i}: {str(e)}")

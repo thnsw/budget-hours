@@ -17,5 +17,5 @@ services:
       - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY:-your-api-key}
       - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2024-12-01-preview}
       - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
-    command: ["--summary", "--output", "/app/output/classified_hours.csv", "--summary-output", "/app/output/summary_report.txt"]
+    command: ["--summary"]
     restart: "no" 

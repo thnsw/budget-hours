@@ -2,6 +2,13 @@
 
 This project extracts time entries from Microsoft SQL Server and uses Azure OpenAI to classify them as billable or non-billable.
 
+## To-do
+- [ ] Shorten explanation output from LLM
+- [ ] Shorten Employee in 'Disapproved hours detail'
+- [ ] Add llm_describer.py that describes project performance
+
+## Maybe-do
+
 ## Setup
 
 1. Copy `.env.example` to `.env` and fill in your credentials:
@@ -31,7 +38,7 @@ The application takes several command-line arguments:
 - `--summary`: Generate a summary report
 - `--summary-output`: Path for the summary report output
 - `--limit`: Limit the number of records to process
-- `--batch-size`: Batch size for API rate limiting (default: 10)
+- `--batch-size`: Batch size for API rate limiting (default: 100)
 - `--dry-run`: Run without making actual API calls (for testing)
 - `--evaluate`: Print detailed evaluation metrics comparing predictions with actual values
 
@@ -182,7 +189,7 @@ python src/main.py --dry-run
 | `--summary` | Generate a summary report |
 | `--summary-output PATH` | Path for summary report output |
 | `--limit N` | Limit number of records processed |
-| `--batch-size N` | Batch size for API rate limiting (default: 10) |
+| `--batch-size N` | Batch size for API rate limiting (default: 100) |
 | `--dry-run` | Run without making actual API calls |
 | `--evaluate` | Print detailed evaluation metrics comparing predictions with actual values |
 
