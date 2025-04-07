@@ -136,15 +136,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
             print("Extracting data from SQL Server...")
             data = extract_data_for_classification()
         
-        print(f"Loaded {len(data)} records for February 2025")
-        
         # Extract-only mode
         if args.extract_only:
             output_path = args.output or f"output/extracted_data_{int(time.time())}.csv"
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             import pandas as pd
-            pd.DataFrame(data).to_csv(output_path, index=False)
+            
+            # Use pandas to write to CSV without index
+            df = pd.DataFrame(data)
+            df.to_csv(output_path, index=False)
+            
             print(f"Data extracted and saved to {output_path}")
+            print(f"CSV file contains {len(df)} records")
             return
         
         # Classify data

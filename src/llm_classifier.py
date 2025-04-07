@@ -52,33 +52,69 @@ def classify_hours(hour_entry: Dict[str, Any], max_retries: int = 3) -> Dict[str
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are a billable hours classifier. Your task is to determine if the hours 
-                        logged should be classified as 'billable' or 'non-billable'. 
-                        
-                        Return your response as a valid JSON object with the following structure:
-                        {
-                            "classification": "billable" or "non-billable",
-                            "confidence": a number between 0 and 1,
-                            "reasoning": "brief explanation of your decision"
-                        }
-                        
-                        Focus on:
-                        - Task description and nature of work
-                        - Project type (client projects are typically billable)
-                        - Internal activities are typically non-billable
-                        - Administrative work is typically non-billable
-                        - Customer name - external customers typically have billable work
-                        - Organization context - may indicate internal vs external work
-                        """
+                        "content": """You are an hour approval classifier. Your task is to determine the probability that the hours logged should be approved.
+
+Return your response as a valid JSON object with the following structure:
+{
+    "approval_probability": a float number between 0.0 and 1.0,
+    "reasoning": "brief explanation of your decision based on the input data"
+}
+
+Focus on:
+- Approval of billable hours is more strict than non-billable hours
+- Task description and consistency with project/task
+- Any policy violations or unusual patterns
+- Clarity and sufficiency of the description
+
+Example 1 Input:
+Employee: Alice
+Project: Internal Tools
+Task: Bug Fixing
+Hours: 2
+Description: Fixed critical login bug.
+
+Example 1 Output:
+{
+    "approval_probability": 0.95,
+    "reasoning": "Clear description, reasonable hours for a bug fix on an internal project."
+}
+
+Example 2 Input:
+Employee: Bob
+Project: Client ABC
+Task: Meeting
+Hours: 8
+Description: Meeting.
+
+Example 2 Output:
+{
+    "approval_probability": 0.1,
+    "reasoning": "Description is too vague. 8 hours for a single meeting is unusually high without further detail."
+}
+
+Example 3 Input:
+Employee: Charlie
+Project: Client DEF Migration
+Task: Data Validation
+Hours: 6
+Description: Validated migrated customer records against source database. Checked 500 records.
+
+Example 3 Output:
+{
+    "approval_probability": 0.85,
+    "reasoning": "Specific description related to the project task. Hours seem appropriate for the described work."
+}
+"""
                     },
                     {
                         "role": "user",
                         "content": prompt
                     }
                 ],
-                max_tokens=500,
+                max_tokens=200, # Reduced max_tokens as the float output is shorter
                 temperature=0.1,
-                model=model_deployment
+                model=model_deployment,
+                response_format={"type": "json_object"} # Enforce JSON output
             )
             
             content = response.choices[0].message.content
@@ -88,20 +124,19 @@ def classify_hours(hour_entry: Dict[str, Any], max_retries: int = 3) -> Dict[str
                 classification_result = extract_json_from_response(content)
                 
                 # Validate expected fields
-                if not all(k in classification_result for k in ["classification", "confidence", "reasoning"]):
-                    raise json.JSONDecodeError("Missing required fields", content, 0)
-                
+                if not all(k in classification_result for k in ["approval_probability", "reasoning"]):
+                    raise json.JSONDecodeError("Missing required fields 'approval_probability' or 'reasoning'", content, 0)
+                if not isinstance(classification_result["approval_probability"], (int, float)) or not (0 <= classification_result["approval_probability"] <= 1):
+                     raise ValueError("Invalid value for 'approval_probability'. Must be a float between 0 and 1.")
+
                 # Add the classification to the original entry
                 result = hour_entry.copy()
+                approval_probability = float(classification_result["approval_probability"])
                 result.update({
-                    "is_billable_predicted": classification_result["classification"] == "billable",
-                    "classification_confidence": classification_result["confidence"],
+                    "is_approved_predicted": approval_probability > 0.5,
+                    "classification_confidence": approval_probability,
                     "classification_reasoning": classification_result["reasoning"]
                 })
-                
-                # Preserve the actual IsBillableKey value for comparison if it exists
-                if "_is_billable_key" in hour_entry:
-                    result["is_billable_actual"] = hour_entry["_is_billable_key"] == 1
                 
                 # Preserve the actual IsApprovedKey value for evaluation if it exists
                 if "_is_approved_key" in hour_entry:
@@ -155,15 +190,16 @@ def format_classification_prompt(hour_entry: Dict[str, Any]) -> str:
     """Format the hour entry data into a prompt for classification"""
     # Only include fields relevant for classification
     return f"""
-    Please classify the following hours entry as billable or non-billable:
+    Please classify the following hours entry as approved or not approved:
     
     Employee: {hour_entry.get('employee_name')}
     Project: {hour_entry.get('project_name')}
     Customer: {hour_entry.get('customer_name')}
-    Organization: {hour_entry.get('organization_name')}
+    Task: {hour_entry.get('TaskName')}
     Hours: {hour_entry.get('hours')}
+    Is Billable: {hour_entry.get('ProjectIsBillable')}
+    Billable Amount: {hour_entry.get('BillableAmount')}
     Description: {hour_entry.get('description')}
-    Date: {hour_entry.get('date')}
     """
 
 def classify_batch(hours_data: List[Dict[str, Any]], batch_size: int = 10) -> List[Dict[str, Any]]:
@@ -203,7 +239,7 @@ def classify_batch(hours_data: List[Dict[str, Any]], batch_size: int = 10) -> Li
             # Add the entry with an error flag
             error_entry = entry.copy()
             error_entry.update({
-                "is_billable_predicted": None,
+                "is_approved_predicted": None,
                 "classification_confidence": 0,
                 "classification_reasoning": f"Error: {str(e)}",
                 "classification_error": True
