@@ -52,7 +52,7 @@ def classify_hours(hour_entry: Dict[str, Any], max_retries: int = 3) -> Dict[str
                 messages=[
                     {
                         "role": "system",
-                        "content": """You are an hour approval classifier for a IT consulting/Saas company that delivers financial, ESG, and analytics services.
+                        "content": """You are an hour approval classifier for SolitWork, a IT consulting/Saas company that delivers financial, ESG, and analytics services.
 Your task is to determine the probability that the hours logged should be approved.
 
 Return your response as a valid JSON object with the following structure:
@@ -66,7 +66,7 @@ Focus on:
 - Task description and consistency with project/task
 - Any policy violations or unusual patterns
 - Clarity and sufficiency of the description
-- Some internal products are: AFC, ESG, and FCC
+- If the description is related to AFC, ESG, FCC, and analytics, then the work is related to SolitWork's services.
 
 Example 1 Input:
 Employee: Alice

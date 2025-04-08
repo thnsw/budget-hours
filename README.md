@@ -1,11 +1,17 @@
-# Billable Hours Classifier
+# Hour Approval Predictor
 
-This project extracts time entries from Microsoft SQL Server and uses Azure OpenAI to classify them as billable or non-billable.
+This project extracts time entries from Microsoft SQL Server, uses Azure OpenAI to predict whether each entry should be approved, and generates a PDF summary report to assist team leads and financial teams in reviewing registered hours.
 
 ## To-do
-- [ ] Shorten explanation output from LLM
-- [ ] Shorten Employee in 'Disapproved hours detail'
-- [ ] Add llm_describer.py that describes project performance
+- [X] Shorten explanation output from LLM
+- [X] Shorten Employee in 'Disapproved hours detail'
+- [X] Add llm_describer.py that describes project performance
+- [X] Add customer llm call to describ customer performance
+- [ ] Add business use-case as the 2nd page
+- [ ] Add table of contents with the following structure: Overall and customer are first in the hierarchy. Projects is a sub-section below each customer.
+- [ ] Update overall statistics.
+
+
 
 ## Maybe-do
 
@@ -35,18 +41,17 @@ The application takes several command-line arguments:
 - `--classify-only`: Only classify data (requires input file with `--input`)
 - `--input`: Input CSV file path (for `--classify-only` mode)
 - `--output`: Output CSV file path
-- `--summary`: Generate a summary report
-- `--summary-output`: Path for the summary report output
+- `--summary`: Generate a PDF summary report
+- `--summary-output`: Path for the PDF summary report output (default: output/summary_report_YYYYMMDD_HHMMSS.pdf)
 - `--limit`: Limit the number of records to process
 - `--batch-size`: Batch size for API rate limiting (default: 100)
 - `--dry-run`: Run without making actual API calls (for testing)
-- `--evaluate`: Print detailed evaluation metrics comparing predictions with actual values
 
 ## Docker Configuration
 
 The default command in the docker-compose.yml runs with the following options:
 ```
---summary --output /app/output/classified_hours.csv --summary-output /app/output/summary_report.txt
+--summary --output /app/output/classified_hours.csv --summary-output /app/output/summary_report.pdf
 ```
 
 You can modify these options in the docker-compose.yml file to suit your needs.
@@ -80,12 +85,12 @@ docker-compose run --rm billable-hours-classifier --extract-only --output /app/o
 
 This application consists of a modular pipeline that:
 
-1. Extracts timesheet data from a SQL Server database, specifically focusing on February 2025 data
-2. Processes each entry through Azure OpenAI to classify it as billable or non-billable
-3. Compares LLM predictions with actual values from the database
-4. Evaluates classification performance against human-approved entries
-5. Outputs the classified data to a CSV file and optional summary report with performance metrics
-6. Supports command-line arguments for flexible execution
+1. Extracts timesheet data from a SQL Server database (`data_extraction.py`).
+2. Processes each entry through Azure OpenAI to predict its approval status (`llm_classifier.py`).
+3. Generates descriptive summaries for projects and customers using Azure OpenAI (`llm_describer.py`).
+4. Outputs the detailed classified data to a CSV file (`output_generator.py`).
+5. Generates a comprehensive PDF summary report including overall statistics, project/customer descriptions, performance metrics, and detailed hour breakdowns (`output_generator.py`).
+6. Supports command-line arguments for flexible execution (`main.py`).
 
 ## Prerequisites
 
@@ -156,18 +161,10 @@ python src/main.py --classify-only --input path/to/input.csv
 
 ### Generate Summary
 
-Add a summary report to any run:
+Add a PDF summary report to any run:
 
 ```
 python src/main.py --summary
-```
-
-### Evaluate Performance
-
-Print detailed classification performance metrics:
-
-```
-python src/main.py --evaluate
 ```
 
 ### Dry Run
@@ -186,18 +183,17 @@ python src/main.py --dry-run
 | `--classify-only` | Only classify data (requires `--input`) |
 | `--input PATH` | Input CSV file path |
 | `--output PATH` | Output CSV file path |
-| `--summary` | Generate a summary report |
-| `--summary-output PATH` | Path for summary report output |
+| `--summary` | Generate a PDF summary report |
+| `--summary-output PATH` | Path for PDF summary report output |
 | `--limit N` | Limit number of records processed |
 | `--batch-size N` | Batch size for API rate limiting (default: 100) |
 | `--dry-run` | Run without making actual API calls |
-| `--evaluate` | Print detailed evaluation metrics comparing predictions with actual values |
 
 ## Examples
 
-### Process February 2025 data with performance evaluation:
+### Process data and generate CSV + PDF Summary:
 ```
-python src/main.py --evaluate --summary
+python src/main.py --summary
 ```
 
 ### Process data from a CSV file:
@@ -217,22 +213,24 @@ python src/main.py --batch-size 5 --summary
 
 ## Project Structure
 
-- `src/data_extraction.py` - Functions to extract data from SQL Server, focusing on February 2025
-- `src/llm_classifier.py` - LLM-based classification using Azure OpenAI
-- `src/output_generator.py` - CSV output, performance evaluation, and summary report generation
-- `src/main.py` - Main CLI runner script
+- `src/data_extraction.py` - Functions to extract data from SQL Server.
+- `src/llm_classifier.py` - LLM-based classification to predict approval status using Azure OpenAI.
+- `src/llm_describer.py` - LLM-based generation of project and customer descriptions using Azure OpenAI.
+- `src/output_generator.py` - Handles CSV output generation and PDF summary report creation (including performance evaluation).
+- `src/main.py` - Main CLI runner script, orchestrates the pipeline.
+- `src/sw-theme/` - Contains image assets (header, footer) for the PDF report theme.
 
 ## Performance Metrics
 
-The classification pipeline evaluates performance using the following metrics:
+The classification pipeline evaluates performance by comparing the predicted approval status (`is_approved_predicted`) with the actual status (`is_approved`) using the following metrics (included in the PDF summary report):
 
-- **Accuracy**: Percentage of correctly classified entries
-- **Precision**: True positives / (True positives + False positives)
-- **Recall**: True positives / (True positives + False negatives)
-- **F1 Score**: Harmonic mean of precision and recall
-- **Human-LLM Agreement**: Percentage of entries where LLM classification matches human approval
+- **Accuracy**: Percentage of correctly classified entries (approved/not approved).
+- **Precision**: True positives / (True positives + False positives) - Measures the accuracy of positive predictions.
+- **Recall**: True positives / (True positives + False negatives) - Measures how many actual positives were correctly identified.
+- **F1 Score**: Harmonic mean of precision and recall.
+- **Confusion Matrix**: Table showing True Positives, True Negatives, False Positives, and False Negatives.
 
-The summary report includes a confusion matrix and detailed project-by-project breakdown comparing predicted vs. actual billable hours.
+The PDF summary report includes these overall metrics and a breakdown comparing predicted vs. actual approved hours.
 
 ## Data Extraction Details
 
@@ -242,10 +240,8 @@ The pipeline extracts the following fields from the SQL Server database:
 - Project Name
 - Customer Name
 - Organization Name
-- Description
-- Employee Name
-- Actual billable status (for evaluation)
-- Approval status (for human vs. LLM comparison)
+- Description (of the time entry)
+- Is Approved (Actual status from database)
 
 ## Development
 
