@@ -77,13 +77,17 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
 	SELECT * FROM LatestBillableEntries
 	WHERE
 		RowNum = 1
-		AND Date like '20250321'
+		AND Date like '20250305'
 		--AND ProjectName = 'Conscia Support'
-		AND (CustomerName = 'Capnor Connery BidCo A/S' OR CustomerName = 'BUNKER HOLDING A/S' OR CustomerName = 'GlobalConnect AS')
+		AND (CustomerName like '%PINDSTRUP MOSEBRUG A/S%' OR CustomerName like 'SW CST 3' OR CustomerName like 'SØSTRENE GRENES IMPORT A/S')
+		AND TaskName not in ('Barsel', 'Sygdom // Sickness')
+		AND (EmployeeName like 'THN - Thomas Nissen' OR EmployeeName like 'PRO - Peter Rokkjær' OR EmployeeName like 'MGU - Morten Gunnersen')
+		--AND CustomerName like '%cst%'
 		--AND Hours > 0
 		--AND IsBillableKey = 1
 		--AND IsApprovedKey = 0
 		--AND DW_ID = 2617911362
+		--AND Description like '%#%'
     """
     
     if limit:

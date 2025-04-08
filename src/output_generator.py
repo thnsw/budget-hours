@@ -99,22 +99,29 @@ def evaluate_classification_performance(classified_data: List[Dict[str, Any]]) -
     """
     # Filter out entries where we don't have actual values or predictions
     valid_entries = [entry for entry in classified_data 
-                    if "is_approved" in entry         # Changed from is_billable_actual
-                    and "is_approved_predicted" in entry # Changed from is_billable_predicted
+                    if "is_approved" in entry         
+                    and "is_approved_predicted" in entry 
                     and entry["is_approved_predicted"] is not None]
     
     if not valid_entries:
         return {"error": "No valid entries for evaluation"}, pd.DataFrame()
     
     # Calculate metrics for LLM vs actual values
-    y_true = [entry["is_approved"] for entry in valid_entries] # Changed from is_billable_actual
-    y_pred = [entry["is_approved_predicted"] for entry in valid_entries] # Changed from is_billable_predicted
+    y_true = [entry["is_approved"] for entry in valid_entries]
+    y_pred = [entry["is_approved_predicted"] for entry in valid_entries]
     
     # Calculate basic metrics
     true_pos = sum(1 for t, p in zip(y_true, y_pred) if t and p)    # Prediction: Approved, Actual: Approved
     true_neg = sum(1 for t, p in zip(y_true, y_pred) if not t and not p) # Prediction: Not Approved, Actual: Not Approved
     false_pos = sum(1 for t, p in zip(y_true, y_pred) if not t and p)   # Prediction: Approved, Actual: Not Approved
     false_neg = sum(1 for t, p in zip(y_true, y_pred) if t and not p)   # Prediction: Not Approved, Actual: Approved
+    
+    # Identify potential missed billing opportunities
+    potential_missed_billing = sum(1 for entry in valid_entries 
+                                  if not entry["is_approved_predicted"] 
+                                  and entry.get("is_billable_key") == 0
+                                  and ('#' in str(entry.get("description", "")) 
+                                       or (entry.get("project_is_billable") == "Yes")))
     
     total = len(valid_entries)
     accuracy = (true_pos + true_neg) / total if total > 0 else 0
@@ -138,7 +145,9 @@ def evaluate_classification_performance(classified_data: List[Dict[str, Any]]) -
         "true_positives": true_pos,
         "true_negatives": true_neg,
         "false_positives": false_pos,
-        "false_negatives": false_neg
+        "false_negatives": false_neg,
+        "potential_missed_billing": potential_missed_billing,
+        "potential_missed_billing_percentage": (potential_missed_billing / total) * 100 if total > 0 else 0
     }
     
     return metrics, confusion_matrix
@@ -218,11 +227,26 @@ class PDFReportGenerator:
         approved_actual = sum(1 for entry in classified_data if entry.get('is_approved') is True)
         not_approved_actual = sum(1 for entry in classified_data if entry.get('is_approved') is False)
         
+        # Calculate potential missed billing opportunities
+        potential_missed_billing = sum(1 for entry in classified_data 
+                                      if not entry.get('is_approved_predicted', True) 
+                                      and entry.get('is_billable_key') == 0
+                                      and ('#' in str(entry.get('description', '')) 
+                                           or entry.get('project_is_billable') == 'Yes'))
+        
+        # Calculate hours
         total_hours = sum(float(entry.get('hours', 0)) for entry in classified_data)
         approved_hours_predicted = sum(float(entry.get('hours', 0)) for entry in classified_data 
                              if entry.get('is_approved_predicted') is True)
         not_approved_hours_predicted = sum(float(entry.get('hours', 0)) for entry in classified_data 
                                  if entry.get('is_approved_predicted') is False)
+        
+        # Calculate potential missed billable hours
+        potential_missed_billable_hours = sum(float(entry.get('hours', 0)) for entry in classified_data 
+                                         if not entry.get('is_approved_predicted', True) 
+                                         and entry.get('is_billable_key') == 0
+                                         and ('#' in str(entry.get('description', '')) 
+                                              or entry.get('project_is_billable') == 'Yes'))
         
         # Generate project descriptions using LLM
         project_data = generate_project_descriptions(classified_data)

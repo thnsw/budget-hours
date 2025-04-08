@@ -13,7 +13,7 @@ from output_generator import generate_csv_output, generate_summary_report
 def setup_parser() -> argparse.ArgumentParser:
     """Set up command line argument parser"""
     parser = argparse.ArgumentParser(
-        description="Billable Hours Classifier - LLM-based classification of time entries",
+        description="Hours Classifier - LLM-based classification of time entries to identify non-billable hours that should have been billable",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
