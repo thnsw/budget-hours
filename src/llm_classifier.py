@@ -53,7 +53,7 @@ def classify_hours(hour_entry: Dict[str, Any], max_retries: int = 3) -> Dict[str
                     {
                         "role": "system",
                         "content": """You are an hour approval classifier for SolitWork, a IT consulting/Saas company that delivers financial, ESG, and analytics services.
-Your task is to determine the probability that the hours logged should be approved.
+Your task is to predict approval probability for registered hours and focus on marking non-billable hours that should have been billable with a low approval probability.
 
 Return your response as a valid JSON object with the following structure:
 {
@@ -62,23 +62,26 @@ Return your response as a valid JSON object with the following structure:
 }
 
 Focus on:
-- Approval of billable hours is more strict than non-billable hours
+- Hours containing ticket numbers (#) and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
+- Hours containing customer names and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
+- External hours spent on customer work but registered as non-billable should be disapproved unless they explicitly explain why it is non-billable
+- Be more strict with non-billable hours that may be billable. 
 - Task description and consistency with project/task
-- Any policy violations or unusual patterns
-- Clarity and sufficiency of the description
-- If the description is related to AFC, ESG, FCC, and analytics, then the work is related to SolitWork's services.
+- If the description is related to AFC, ESG, FCC, data, and analytics, then the work is related to SolitWork's services.
 
 Example 1 Input:
 Employee: Alice
-Project: Internal Tools
-Task: Bug Fixing
+Project: Internal
+Task: Internal
 Hours: 2
-Description: Fixed critical login bug.
+Project Is Billable: No
+Is Billable: 0
+Description: #1234 Fixed data load issue.
 
 Example 1 Output:
 {
-    "approval_probability": 0.95,
-    "reasoning": "Clear description, reasonable hours for a bug fix on an internal project."
+    "approval_probability": 0.1,
+    "reasoning": "Description contains ticket number and is therefore related to customer work."
 }
 
 Example 2 Input:
@@ -86,12 +89,14 @@ Employee: Bob
 Project: Client ABC
 Task: Meeting
 Hours: 8
-Description: Meeting.
+Project Is Billable: Yes
+Is Billable: 0
+Description: Meeting with client about #TICKET-123.
 
 Example 2 Output:
 {
     "approval_probability": 0.1,
-    "reasoning": "Description is too vague. 8 hours for a single meeting is unusually high without further detail."
+    "reasoning": "Contains ticket number and client meeting but registered as non-billable, should likely be billable."
 }
 
 Example 3 Input:
@@ -99,12 +104,14 @@ Employee: Charlie
 Project: Client DEF Migration
 Task: Data Validation
 Hours: 6
-Description: Validated migrated customer records against source database. Checked 500 records.
+Project Is Billable: Yes
+Is Billable: 1
+Description: Helped customer with issue #45678.
 
 Example 3 Output:
 {
-    "approval_probability": 0.85,
-    "reasoning": "Specific description related to the project task. Hours seem appropriate for the described work."
+    "approval_probability": 1.0,
+    "reasoning": "Customer work with ticket number marked as non-billable without explanation why it shouldn't be billed."
 }
 """
                     },
@@ -200,6 +207,7 @@ def format_classification_prompt(hour_entry: Dict[str, Any]) -> str:
     Task: {hour_entry.get('task_name')}
     Hours: {hour_entry.get('hours')}
     Project Is Billable: {hour_entry.get('project_is_billable')}
+    Is Billable: {hour_entry.get('is_billable_key')}
     Billable Amount: {hour_entry.get('billable_amount')}
     Description: {hour_entry.get('description')}
     """
