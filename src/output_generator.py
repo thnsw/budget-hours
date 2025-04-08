@@ -8,9 +8,6 @@ from datetime import datetime
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from PIL import Image
-from sklearn.metrics import confusion_matrix, classification_report
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 # Import the llm_describer module
 from llm_describer import generate_project_descriptions, generate_customer_descriptions
@@ -90,52 +87,61 @@ def generate_csv_output(classified_data: List[Dict[str, Any]], output_path: Opti
     except Exception as e:
         raise Exception(f"Error generating CSV output: {str(e)}")
 
-def evaluate_classification_performance(classified_data: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], pd.DataFrame, pd.DataFrame]:
+def evaluate_classification_performance(classified_data: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], pd.DataFrame]:
     """
-    Evaluate classification performance by comparing predicted vs actual approvals
+    Evaluate the performance of the classifier by comparing predicted values with actual values
     
     Args:
         classified_data: List of dictionaries with classified hours data
         
     Returns:
-        Tuple containing:
-        - Dictionary with evaluation metrics
-        - DataFrame of false positives
-        - DataFrame of false negatives
+        Tuple containing (metrics dictionary, confusion matrix DataFrame)
     """
-    # Convert to DataFrame for easier analysis
-    df = pd.DataFrame(classified_data)
+    # Filter out entries where we don't have actual values or predictions
+    valid_entries = [entry for entry in classified_data 
+                    if "is_approved" in entry         # Changed from is_billable_actual
+                    and "is_approved_predicted" in entry # Changed from is_billable_predicted
+                    and entry["is_approved_predicted"] is not None]
+    
+    if not valid_entries:
+        return {"error": "No valid entries for evaluation"}, pd.DataFrame()
+    
+    # Calculate metrics for LLM vs actual values
+    y_true = [entry["is_approved"] for entry in valid_entries] # Changed from is_billable_actual
+    y_pred = [entry["is_approved_predicted"] for entry in valid_entries] # Changed from is_billable_predicted
+    
+    # Calculate basic metrics
+    true_pos = sum(1 for t, p in zip(y_true, y_pred) if t and p)    # Prediction: Approved, Actual: Approved
+    true_neg = sum(1 for t, p in zip(y_true, y_pred) if not t and not p) # Prediction: Not Approved, Actual: Not Approved
+    false_pos = sum(1 for t, p in zip(y_true, y_pred) if not t and p)   # Prediction: Approved, Actual: Not Approved
+    false_neg = sum(1 for t, p in zip(y_true, y_pred) if t and not p)   # Prediction: Not Approved, Actual: Approved
+    
+    total = len(valid_entries)
+    accuracy = (true_pos + true_neg) / total if total > 0 else 0
+    
+    precision = true_pos / (true_pos + false_pos) if (true_pos + false_pos) > 0 else 0
+    recall = true_pos / (true_pos + false_neg) if (true_pos + false_neg) > 0 else 0
+    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
     
     # Calculate confusion matrix
-    y_true = df['is_approved'].astype(int)
-    y_pred = df['is_approved_predicted'].astype(int)
-    cm = confusion_matrix(y_true, y_pred)
+    confusion_matrix = pd.DataFrame({
+        "Actual Approved": [true_pos, false_neg],
+        "Actual Not Approved": [false_pos, true_neg]
+    }, index=["Predicted Approved", "Predicted Not Approved"])
     
-    # Generate classification report
-    report = classification_report(y_true, y_pred, output_dict=True)
+    metrics = {
+        "total_entries_evaluated": total,
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1,
+        "true_positives": true_pos,
+        "true_negatives": true_neg,
+        "false_positives": false_pos,
+        "false_negatives": false_neg
+    }
     
-    # Create confusion matrix plot
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-    plt.title('Confusion Matrix')
-    plt.ylabel('Actual')
-    plt.xlabel('Predicted')
-    
-    # Save plot
-    os.makedirs('output', exist_ok=True)
-    cm_path = 'output/confusion_matrix.png'
-    plt.savefig(cm_path)
-    plt.close()
-    
-    # Get false positives and negatives
-    false_positives = df[(df['is_approved_predicted'] == True) & (df['is_approved'] == False)]
-    false_negatives = df[(df['is_approved_predicted'] == False) & (df['is_approved'] == True)]
-    
-    return {
-        'confusion_matrix': cm.tolist(),
-        'classification_report': report,
-        'confusion_matrix_path': cm_path
-    }, false_positives, false_negatives
+    return metrics, confusion_matrix
 
 class PDFReportGenerator:
     def __init__(self, output_dir="output"):
@@ -173,71 +179,13 @@ class PDFReportGenerator:
         except Exception as e:
             print(f"Warning: Could not add footer image: {str(e)}")
     
-    def add_evaluation_page(self, pdf: FPDF, evaluation_results: Dict[str, Any], 
-                          false_positives: pd.DataFrame, false_negatives: pd.DataFrame):
-        """Add evaluation page to the PDF report"""
-        pdf.add_page()
-        pdf.set_font('Arial', 'B', 16)
-        pdf.cell(0, 10, 'Classification Evaluation', ln=True, align='C')
-        pdf.ln(10)
-        
-        # Add confusion matrix image
-        if os.path.exists(evaluation_results['confusion_matrix_path']):
-            pdf.image(evaluation_results['confusion_matrix_path'], x=10, y=40, w=190)
-        
-        # Add metrics
-        pdf.ln(120)
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(0, 10, 'Classification Metrics', ln=True)
-        pdf.set_font('Arial', '', 10)
-        
-        report = evaluation_results['classification_report']
-        metrics = ['precision', 'recall', 'f1-score']
-        for metric in metrics:
-            pdf.cell(0, 10, f'{metric.capitalize()}: {report["1"][metric]:.3f}', ln=True)
-        
-        # Add false positives table
-        pdf.ln(10)
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(0, 10, 'False Positives', ln=True)
-        self._add_dataframe_to_pdf(pdf, false_positives[['employee_name', 'project_name', 'hours', 'description']])
-        
-        # Add false negatives table
-        pdf.add_page()
-        pdf.set_font('Arial', 'B', 12)
-        pdf.cell(0, 10, 'False Negatives', ln=True)
-        self._add_dataframe_to_pdf(pdf, false_negatives[['employee_name', 'project_name', 'hours', 'description']])
-    
-    def _add_dataframe_to_pdf(self, pdf: FPDF, df: pd.DataFrame):
-        """Helper method to add a DataFrame as a table to the PDF"""
-        if df.empty:
-            pdf.cell(0, 10, 'No entries found', ln=True)
-            return
-            
-        # Add headers
-        pdf.set_font('Arial', 'B', 10)
-        col_widths = [40, 50, 20, 80]
-        for i, col in enumerate(df.columns):
-            pdf.cell(col_widths[i], 10, col, 1)
-        pdf.ln()
-        
-        # Add data
-        pdf.set_font('Arial', '', 8)
-        for _, row in df.iterrows():
-            for i, value in enumerate(row):
-                pdf.cell(col_widths[i], 10, str(value), 1)
-            pdf.ln()
-    
-    def create_pdf_report(self, classified_data: List[Dict[str, Any]], 
-                         output_path: Optional[str] = None,
-                         evaluate: bool = False) -> str:
+    def create_pdf_report(self, classified_data: List[Dict[str, Any]], output_path: Optional[str] = None) -> str:
         """
-        Create a PDF report with the classified hours data
+        Create a PDF report with overall statistics and project details
         
         Args:
             classified_data: List of dictionaries with classified hours data
-            output_path: Optional path for the output file
-            evaluate: Whether to include evaluation metrics
+            output_path: Optional path for the output file. If None, a default path will be generated.
             
         Returns:
             Path to the generated PDF file
@@ -749,11 +697,6 @@ class PDFReportGenerator:
             # Add a page break between projects (except for the last one)
             if list(projects.keys()).index(project) < len(projects) - 1:
                 pdf.add_page()
-        
-        # Add evaluation page if requested
-        if evaluate:
-            evaluation_results, false_positives, false_negatives = evaluate_classification_performance(classified_data)
-            self.add_evaluation_page(pdf, evaluation_results, false_positives, false_negatives)
         
         # Save the PDF file
         pdf.output(output_path)

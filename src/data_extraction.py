@@ -77,9 +77,9 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
 	SELECT * FROM LatestBillableEntries
 	WHERE
 		RowNum = 1
-		AND Date like '20250403'
+		AND Date like '20250321'
 		--AND ProjectName = 'Conscia Support'
-		AND (CustomerName = 'Capnor Connery BidCo A/S' OR CustomerName = 'Sophion Bioscience A/S')
+		AND (CustomerName = 'Capnor Connery BidCo A/S' OR CustomerName = 'BUNKER HOLDING A/S' OR CustomerName = 'GlobalConnect AS')
 		--AND Hours > 0
 		--AND IsBillableKey = 1
 		--AND IsApprovedKey = 0

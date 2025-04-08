@@ -48,12 +48,6 @@ def setup_parser() -> argparse.ArgumentParser:
     )
     
     parser.add_argument(
-        "--evaluate",
-        action="store_true",
-        help="Compare predicted approvals with actual approvals and generate evaluation metrics"
-    )
-    
-    parser.add_argument(
         "--summary-output",
         type=str,
         help="Path for the summary report output"
@@ -122,34 +116,53 @@ def mock_classify_batch(data: List[Dict[str, Any]], batch_size: int = 100) -> Li
     return results
 
 def run_pipeline(args: argparse.Namespace) -> None:
-    """Run the main pipeline based on command line arguments"""
+    """Run the classification pipeline based on command line arguments"""
     try:
-        if args.extract_only:
-            print("Extracting data from SQL Server...")
-            data = extract_data_for_classification()
-            if args.output:
-                generate_csv_output(data, args.output)
-            return
+        # Initial setup
+        load_dotenv()
+        start_time = time.time()
         
+        # Extract data
         if args.classify_only:
-            if not args.input:
-                raise ValueError("--input is required when using --classify-only")
-            print(f"Loading data from {args.input}...")
+            print(f"Loading data from {args.input}")
             data = load_csv_data(args.input)
         else:
             print("Extracting data from SQL Server...")
             data = extract_data_for_classification()
         
-        print("Classifying hours...")
-        classified_data = classify_batch(data)
+        # Extract-only mode
+        if args.extract_only:
+            output_path = args.output or f"output/extracted_data_{int(time.time())}.csv"
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            import pandas as pd
+            
+            # Use pandas to write to CSV without index
+            df = pd.DataFrame(data)
+            df.to_csv(output_path, index=False)
+            
+            print(f"Data extracted and saved to {output_path}")
+            print(f"CSV file contains {len(df)} records")
+            return
         
-        if args.output:
-            print(f"Generating CSV output to {args.output}...")
-            generate_csv_output(classified_data, args.output)
+        # Classify data
+        if not args.dry_run:
+            print("Classifying data using Azure OpenAI LLM...")
+            classified_data = classify_batch(data, batch_size=args.batch_size)
+        else:
+            print("DRY RUN: Simulating classification...")
+            classified_data = mock_classify_batch(data, batch_size=args.batch_size)
         
+        # Generate output
+        output_path = generate_csv_output(classified_data, output_path=args.output)
+        
+        # Generate summary if requested
         if args.summary:
-            print("Generating summary report...")
-            generate_summary_report(classified_data, evaluate=args.evaluate)
+            summary_path = generate_summary_report(classified_data, output_path=args.summary_output)
+            print(f"Summary report generated: {summary_path}")
+        
+        elapsed_time = time.time() - start_time
+        print(f"Pipeline completed in {elapsed_time:.2f} seconds")
+        print(f"Output saved to {output_path}")
         
     except Exception as e:
         print(f"Error: {str(e)}")
