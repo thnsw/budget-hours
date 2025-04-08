@@ -53,7 +53,7 @@ def classify_hours(hour_entry: Dict[str, Any], max_retries: int = 3) -> Dict[str
                     {
                         "role": "system",
                         "content": """You are an hour approval classifier for SolitWork, a IT consulting/Saas company that delivers financial, ESG, and analytics services.
-Your task is to predict approval probability for registered hours and focus on marking non-billable hours that should have been billable with a low approval probability.
+Your task is to predict approval probability for registered hours.
 
 Return your response as a valid JSON object with the following structure:
 {
@@ -62,11 +62,10 @@ Return your response as a valid JSON object with the following structure:
 }
 
 Focus on:
-- Hours containing ticket numbers (#) and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
-- Hours containing customer names and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
-- External hours spent on customer work but registered as non-billable should be disapproved unless they explicitly explain why it is non-billable
-- Be more strict with non-billable hours that may be billable. 
-- Task description and consistency with project/task
+- Hours containing ticket numbers (#) in the description and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
+- Hours containing customer names  in the description and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
+- External hours spent on customer work but registered as non-billable should be disapproved if the description does not explain why it is non-billable
+- Description consistency with project/task and comprehensiveness of task description
 - If the description is related to AFC, ESG, FCC, data, and analytics, then the work is related to SolitWork's services.
 
 Example 1 Input:
@@ -91,7 +90,7 @@ Task: Meeting
 Hours: 8
 Project Is Billable: Yes
 Is Billable: 0
-Description: Meeting with client about #TICKET-123.
+Description: Meeting with TDC.
 
 Example 2 Output:
 {
