@@ -2,11 +2,18 @@ import os
 import csv
 import pandas as pd
 import numpy as np
+import re
 from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from fpdf import FPDF
 from fpdf.fonts import FontFace
 from PIL import Image
+from sklearn.metrics import confusion_matrix, classification_report
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Import the llm_describer module
+from llm_describer import generate_project_descriptions, generate_customer_descriptions
 
 def generate_csv_output(classified_data: List[Dict[str, Any]], output_path: Optional[str] = None) -> str:
     """
@@ -56,6 +63,11 @@ def generate_csv_output(classified_data: List[Dict[str, Any]], output_path: Opti
             entry["prediction_matches_actual"] = None
             
         normalized_entry = {col: entry.get(col, "") for col in columns}
+        
+        # Replace newlines and other page break characters in description with a space
+        if isinstance(normalized_entry["description"], str):
+            normalized_entry["description"] = re.sub(r'[\n\r\f]+', ' ', normalized_entry["description"]).strip()
+            
         normalized_data.append(normalized_entry)
     
     try:
@@ -78,61 +90,52 @@ def generate_csv_output(classified_data: List[Dict[str, Any]], output_path: Opti
     except Exception as e:
         raise Exception(f"Error generating CSV output: {str(e)}")
 
-def evaluate_classification_performance(classified_data: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], pd.DataFrame]:
+def evaluate_classification_performance(classified_data: List[Dict[str, Any]]) -> Tuple[Dict[str, Any], pd.DataFrame, pd.DataFrame]:
     """
-    Evaluate the performance of the classifier by comparing predicted values with actual values
+    Evaluate classification performance by comparing predicted vs actual approvals
     
     Args:
         classified_data: List of dictionaries with classified hours data
         
     Returns:
-        Tuple containing (metrics dictionary, confusion matrix DataFrame)
+        Tuple containing:
+        - Dictionary with evaluation metrics
+        - DataFrame of false positives
+        - DataFrame of false negatives
     """
-    # Filter out entries where we don't have actual values or predictions
-    valid_entries = [entry for entry in classified_data 
-                    if "is_approved" in entry         # Changed from is_billable_actual
-                    and "is_approved_predicted" in entry # Changed from is_billable_predicted
-                    and entry["is_approved_predicted"] is not None]
-    
-    if not valid_entries:
-        return {"error": "No valid entries for evaluation"}, pd.DataFrame()
-    
-    # Calculate metrics for LLM vs actual values
-    y_true = [entry["is_approved"] for entry in valid_entries] # Changed from is_billable_actual
-    y_pred = [entry["is_approved_predicted"] for entry in valid_entries] # Changed from is_billable_predicted
-    
-    # Calculate basic metrics
-    true_pos = sum(1 for t, p in zip(y_true, y_pred) if t and p)    # Prediction: Approved, Actual: Approved
-    true_neg = sum(1 for t, p in zip(y_true, y_pred) if not t and not p) # Prediction: Not Approved, Actual: Not Approved
-    false_pos = sum(1 for t, p in zip(y_true, y_pred) if not t and p)   # Prediction: Approved, Actual: Not Approved
-    false_neg = sum(1 for t, p in zip(y_true, y_pred) if t and not p)   # Prediction: Not Approved, Actual: Approved
-    
-    total = len(valid_entries)
-    accuracy = (true_pos + true_neg) / total if total > 0 else 0
-    
-    precision = true_pos / (true_pos + false_pos) if (true_pos + false_pos) > 0 else 0
-    recall = true_pos / (true_pos + false_neg) if (true_pos + false_neg) > 0 else 0
-    f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    # Convert to DataFrame for easier analysis
+    df = pd.DataFrame(classified_data)
     
     # Calculate confusion matrix
-    confusion_matrix = pd.DataFrame({
-        "Actual Approved": [true_pos, false_neg],
-        "Actual Not Approved": [false_pos, true_neg]
-    }, index=["Predicted Approved", "Predicted Not Approved"])
+    y_true = df['is_approved'].astype(int)
+    y_pred = df['is_approved_predicted'].astype(int)
+    cm = confusion_matrix(y_true, y_pred)
     
-    metrics = {
-        "total_entries_evaluated": total,
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1_score": f1,
-        "true_positives": true_pos,
-        "true_negatives": true_neg,
-        "false_positives": false_pos,
-        "false_negatives": false_neg
-    }
+    # Generate classification report
+    report = classification_report(y_true, y_pred, output_dict=True)
     
-    return metrics, confusion_matrix
+    # Create confusion matrix plot
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.ylabel('Actual')
+    plt.xlabel('Predicted')
+    
+    # Save plot
+    os.makedirs('output', exist_ok=True)
+    cm_path = 'output/confusion_matrix.png'
+    plt.savefig(cm_path)
+    plt.close()
+    
+    # Get false positives and negatives
+    false_positives = df[(df['is_approved_predicted'] == True) & (df['is_approved'] == False)]
+    false_negatives = df[(df['is_approved_predicted'] == False) & (df['is_approved'] == True)]
+    
+    return {
+        'confusion_matrix': cm.tolist(),
+        'classification_report': report,
+        'confusion_matrix_path': cm_path
+    }, false_positives, false_negatives
 
 class PDFReportGenerator:
     def __init__(self, output_dir="output"):
@@ -170,13 +173,71 @@ class PDFReportGenerator:
         except Exception as e:
             print(f"Warning: Could not add footer image: {str(e)}")
     
-    def create_pdf_report(self, classified_data: List[Dict[str, Any]], output_path: Optional[str] = None) -> str:
+    def add_evaluation_page(self, pdf: FPDF, evaluation_results: Dict[str, Any], 
+                          false_positives: pd.DataFrame, false_negatives: pd.DataFrame):
+        """Add evaluation page to the PDF report"""
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 16)
+        pdf.cell(0, 10, 'Classification Evaluation', ln=True, align='C')
+        pdf.ln(10)
+        
+        # Add confusion matrix image
+        if os.path.exists(evaluation_results['confusion_matrix_path']):
+            pdf.image(evaluation_results['confusion_matrix_path'], x=10, y=40, w=190)
+        
+        # Add metrics
+        pdf.ln(120)
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'Classification Metrics', ln=True)
+        pdf.set_font('Arial', '', 10)
+        
+        report = evaluation_results['classification_report']
+        metrics = ['precision', 'recall', 'f1-score']
+        for metric in metrics:
+            pdf.cell(0, 10, f'{metric.capitalize()}: {report["1"][metric]:.3f}', ln=True)
+        
+        # Add false positives table
+        pdf.ln(10)
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'False Positives', ln=True)
+        self._add_dataframe_to_pdf(pdf, false_positives[['employee_name', 'project_name', 'hours', 'description']])
+        
+        # Add false negatives table
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 12)
+        pdf.cell(0, 10, 'False Negatives', ln=True)
+        self._add_dataframe_to_pdf(pdf, false_negatives[['employee_name', 'project_name', 'hours', 'description']])
+    
+    def _add_dataframe_to_pdf(self, pdf: FPDF, df: pd.DataFrame):
+        """Helper method to add a DataFrame as a table to the PDF"""
+        if df.empty:
+            pdf.cell(0, 10, 'No entries found', ln=True)
+            return
+            
+        # Add headers
+        pdf.set_font('Arial', 'B', 10)
+        col_widths = [40, 50, 20, 80]
+        for i, col in enumerate(df.columns):
+            pdf.cell(col_widths[i], 10, col, 1)
+        pdf.ln()
+        
+        # Add data
+        pdf.set_font('Arial', '', 8)
+        for _, row in df.iterrows():
+            for i, value in enumerate(row):
+                pdf.cell(col_widths[i], 10, str(value), 1)
+            pdf.ln()
+    
+    def create_pdf_report(self, classified_data: List[Dict[str, Any]], 
+                         output_path: Optional[str] = None,
+                         evaluate: bool = False) -> str:
         """
-        Create a PDF report with overall statistics and project details
+        Create a PDF report with the classified hours data
         
         Args:
             classified_data: List of dictionaries with classified hours data
-            output_path: Optional path for the output file. If None, a default path will be generated.
+            output_path: Optional path for the output file
+            evaluate: Whether to include evaluation metrics
             
         Returns:
             Path to the generated PDF file
@@ -214,6 +275,12 @@ class PDFReportGenerator:
                              if entry.get('is_approved_predicted') is True)
         not_approved_hours_predicted = sum(float(entry.get('hours', 0)) for entry in classified_data 
                                  if entry.get('is_approved_predicted') is False)
+        
+        # Generate project descriptions using LLM
+        project_data = generate_project_descriptions(classified_data)
+        
+        # Generate customer descriptions using LLM
+        customer_data = generate_customer_descriptions(classified_data)
         
         # Group by project
         projects = {}
@@ -270,7 +337,7 @@ class PDFReportGenerator:
         # Position title in middle of page
         y_position = (297 - self.header_height - self.footer_height) / 2 - 20
         pdf.set_y(self.header_height + y_position)
-        pdf.cell(0, 10, "Hours Approval Summary Report", ln=True, align="C")
+        pdf.cell(0, 10, "Hours Approval Report", ln=True, align="C")
         
         # Add overall statistics section (removed Classification Performance Metrics section)
         pdf.add_page()
@@ -290,12 +357,11 @@ class PDFReportGenerator:
         data = [
             ["Metric", "Value", "Percentage"],
             ["Total Entries Processed", str(total_entries), "100%"],
-            ["Approved Entries", str(approved_predicted), f"{approved_predicted/total_entries*100:.1f}%"],
-            ["Not Approved Entries", str(not_approved_predicted), f"{not_approved_predicted/total_entries*100:.1f}%"],
-            ["Error Entries (Prediction Failed)", str(error_entries), f"{error_entries/total_entries*100:.1f}%"],
+            ["Entries Predicted Approved", str(approved_predicted), f"{approved_predicted/total_entries*100:.1f}%"],
+            ["Entries Predicted Not Approved", str(not_approved_predicted), f"{not_approved_predicted/total_entries*100:.1f}%"],
             ["Total Hours Processed", f"{total_hours:.2f}", "100%"],
-            ["Approved Hours", f"{approved_hours_predicted:.2f}", f"{approved_hours_predicted/total_hours*100:.1f}%"],
-            ["Not Approved Hours", f"{not_approved_hours_predicted:.2f}", f"{not_approved_hours_predicted/total_hours*100:.1f}%"]
+            ["Hours Predicted Approved", f"{approved_hours_predicted:.2f}", f"{approved_hours_predicted/total_hours*100:.1f}%"],
+            ["Hours Predicted Not Approved", f"{not_approved_hours_predicted:.2f}", f"{not_approved_hours_predicted/total_hours*100:.1f}%"]
         ]
         
         with pdf.table(
@@ -311,6 +377,192 @@ class PDFReportGenerator:
                 for cell_data in row_data:
                     row.cell(cell_data)
         
+        # Group data by customer for customer-specific statistics
+        customer_stats = {}
+        
+        for entry in classified_data:
+            customer = entry.get('customer_name', 'Unknown')
+            
+            # Initialize customer stats if not exists
+            if customer not in customer_stats:
+                customer_stats[customer] = {
+                    'total_hours': 0,
+                    'billable_hours': 0,
+                    'approved_hours': 0,
+                    'not_approved_hours': 0,
+                    'entries': 0,
+                    'employees': set(),
+                    'projects': set()
+                }
+            
+            # Update customer stats
+            customer_stats[customer]['entries'] += 1
+            hours = float(entry.get('hours', 0))
+            customer_stats[customer]['total_hours'] += hours
+            
+            if entry.get('is_billable_key') == 1:
+                customer_stats[customer]['billable_hours'] += hours
+            if entry.get('is_approved_predicted') is True:
+                customer_stats[customer]['approved_hours'] += hours
+            elif entry.get('is_approved_predicted') is False:
+                customer_stats[customer]['not_approved_hours'] += hours
+            
+            # Track unique employees and projects for this customer
+            if entry.get('employee_name'):
+                customer_stats[customer]['employees'].add(entry.get('employee_name'))
+            
+            if entry.get('project_name'):
+                customer_stats[customer]['projects'].add(entry.get('project_name'))
+        
+        # Add Customer Statistics section
+        pdf.ln(10)
+        pdf.set_font("Times", "B", 14)
+        pdf.cell(0, 10, "Customer Statistics", ln=True)
+        pdf.set_font("Times", "", 10)
+        
+        # Define column widths for customer statistics table
+        customer_stats_col_widths = [50, 25, 25, 30, 30, 30]
+        
+        # Create table headers
+        customer_table_data = [
+            ["Customer", "Hours", "Projects", "Employees", "Billable Rate", "Approval Rate"]
+        ]
+        
+        # Add data for each customer
+        for customer, stats in customer_stats.items():
+            total_hours = stats['total_hours']
+            approved_hours = stats['approved_hours']
+            billable_hours = stats['billable_hours']
+            
+            # Calculate percentages
+            approval_rate = f"{(approved_hours / total_hours) * 100:.1f}%" if total_hours > 0 else "0%"
+            billable_pct = f"{(billable_hours / total_hours) * 100:.1f}%" if total_hours > 0 else "0%"
+            
+            customer_table_data.append([
+                customer,
+                f"{total_hours:.2f}",
+                str(len(stats['projects'])),
+                str(len(stats['employees'])),
+                billable_pct,
+                approval_rate
+            ])
+        
+        # Create the table
+        with pdf.table(
+            col_widths=customer_stats_col_widths,
+            text_align=["LEFT", "CENTER", "CENTER", "CENTER", "CENTER", "CENTER"],
+            line_height=6,
+            headings_style=heading_style,
+            cell_fill_mode="ROWS",
+            cell_fill_color=light_grey
+        ) as table:
+            for i, row_data in enumerate(customer_table_data):
+                row = table.row()
+                for cell_data in row_data:
+                    row.cell(cell_data)
+        
+        """# Add detailed customer breakdown
+        pdf.ln(10)
+        pdf.set_font("Times", "B", 14)
+        pdf.cell(0, 10, "Customer Hour Distribution", ln=True)
+        
+        # For each customer, show a detailed breakdown of billable/non-billable hours
+        for customer, stats in customer_stats.items():
+            pdf.ln(5)
+            pdf.set_font("Times", "B", 12)
+            pdf.cell(0, 10, f"{customer}", ln=True)
+            pdf.set_font("Times", "", 10)
+            
+            total_hours = stats['total_hours']
+            approved_hours = stats['approved_hours']
+            not_approved_hours = stats['not_approved_hours']
+            
+            # Calculate percentages
+            approved_pct = (approved_hours / total_hours) * 100 if total_hours > 0 else 0
+            not_approved_pct = (not_approved_hours / total_hours) * 100 if total_hours > 0 else 0
+            
+            # Create hour distribution table
+            hour_distribution_col_widths = [80, 30, 30, 30]
+            hour_data = [
+                ["Hour Type", "Hours", "%", "Projects"],
+                ["Total Hours", f"{total_hours:.2f}", "100%", str(len(stats['projects']))],
+                ["Billable Hours", f"{approved_hours:.2f}", f"{approved_pct:.1f}%", ""],
+                ["Non-billable Hours", f"{not_approved_hours:.2f}", f"{not_approved_pct:.1f}%", ""]
+            ]
+            
+            with pdf.table(
+                col_widths=hour_distribution_col_widths,
+                text_align=["LEFT", "CENTER", "CENTER", "CENTER"],
+                line_height=6,
+                headings_style=heading_style,
+                cell_fill_mode="ROWS",
+                cell_fill_color=light_grey
+            ) as table:
+                for i, row_data in enumerate(hour_data):
+                    row = table.row()
+                    for cell_data in row_data:
+                        row.cell(cell_data)
+            
+            # List projects for this customer if there are not too many
+            if len(stats['projects']) <= 5:
+                pdf.ln(3)
+                pdf.set_font("Times", "I", 10)
+                pdf.cell(0, 10, f"Projects: {', '.join(stats['projects'])}", ln=True)"""
+        
+        # Add customer overview section
+        for customer_name, customer in customer_data.items():
+            pdf.add_page()
+            pdf.set_font("Times", "B", 16)
+            pdf.cell(0, 10, f"Customer Overview: {customer_name}", ln=True)
+            
+            # Add customer description/summary if available
+            if 'description' in customer:
+                pdf.set_font("Times", "I", 10)
+                pdf.multi_cell(0, 5, customer['description'])
+                pdf.ln(3)
+            
+            # Create customer projects table
+            pdf.set_font("Times", "B", 12)
+            pdf.cell(0, 10, "Project Summary", ln=True)
+            pdf.set_font("Times", "", 10)
+            
+            # Define column widths for the customer projects table
+            customer_projects_col_widths = [60, 30, 30, 30, 30]
+            
+            # Table headers
+            projects_data = [["Project", "Total Hours", "Billable Hours", "Non-Billable Hours", "Approval Rate"]]
+            
+            # Add data for each project under this customer
+            for project_name, project_stats in customer['projects'].items():
+                total_hours = project_stats.get('total_hours', 0)
+                billable_hours = project_stats.get('billable_hours', 0)
+                non_billable_hours = project_stats.get('non_billable_hours', 0)
+                approved_hours = project_stats.get('approved_hours', 0)
+                
+                approval_rate = f"{(approved_hours / total_hours) * 100:.1f}%" if total_hours > 0 else "0%"
+                
+                projects_data.append([
+                    project_name,
+                    f"{total_hours:.2f}",
+                    f"{billable_hours:.2f}",
+                    f"{non_billable_hours:.2f}",
+                    approval_rate
+                ])
+            
+            # Create the table
+            with pdf.table(
+                col_widths=customer_projects_col_widths,
+                text_align=["LEFT", "CENTER", "CENTER", "CENTER", "CENTER"],
+                line_height=6,
+                headings_style=heading_style,
+                cell_fill_mode="ROWS",
+                cell_fill_color=light_grey
+            ) as table:
+                for i, row_data in enumerate(projects_data):
+                    row = table.row()
+                    for cell_data in row_data:
+                        row.cell(cell_data)
+        
         # Add statistics by project section
         pdf.add_page()
         pdf.set_font("Times", "B", 16)
@@ -325,6 +577,65 @@ class PDFReportGenerator:
             pdf.ln(5)
             pdf.set_font("Times", "B", 14)
             pdf.cell(0, 10, f"Project: {project}", ln=True)
+            
+            # Add project description/summary if available
+            if project in project_data and 'description' in project_data[project]:
+                pdf.set_font("Times", "I", 10)
+                pdf.multi_cell(0, 5, project_data[project]['description'])
+                pdf.ln(3)
+            
+            # Create project summary table with key metrics
+            if project in project_data:
+                pdf.set_font("Times", "B", 12)
+                pdf.cell(0, 10, "Project Summary", ln=True)
+                pdf.set_font("Times", "", 10)
+                
+                # Project summary table
+                project_summary_col_widths = [60, 120]
+                
+                # Get employee names (limited to first 3)
+                employees = project_data[project].get('employees', [])
+                employees_str = ", ".join([emp[:3] for emp in employees]) if employees else "No employees listed"
+                
+                # Calculate billable/non-billable percentages
+                total_hours = project_data[project].get('total_hours', 0)
+                billable_hours = project_data[project].get('billable_hours', 0)
+                non_billable_hours = project_data[project].get('non_billable_hours', 0)
+                billable_pct = (billable_hours / total_hours) * 100 if total_hours > 0 else 0
+                non_billable_pct = 100 - billable_pct
+                
+                # Calculate approval percentages
+                approved_hours = project_data[project].get('approved_hours', 0)
+                not_approved_hours = project_data[project].get('not_approved_hours', 0)
+                approved_pct = (approved_hours / total_hours) * 100 if total_hours > 0 else 0
+                not_approved_pct = (not_approved_hours / total_hours) * 100 if total_hours > 0 else 0
+                
+                # Create summary table
+                summary_data = [
+                    ["Metric", "Value"],
+                    ["Key Employees", employees_str],
+                    ["Total Hours", f"{total_hours:.2f}"],
+                    ["Billable Hours", f"{billable_hours:.2f} ({billable_pct:.1f}%)"],
+                    ["Non-billable Hours", f"{non_billable_hours:.2f} ({non_billable_pct:.1f}%)"],
+                    ["Approved Hours", f"{approved_hours:.2f} ({approved_pct:.1f}%)"],
+                    ["Not Approved Hours", f"{not_approved_hours:.2f} ({not_approved_pct:.1f}%)"]
+                ]
+                
+                with pdf.table(
+                    col_widths=project_summary_col_widths,
+                    text_align=["LEFT", "LEFT"],
+                    line_height=6,
+                    headings_style=heading_style,
+                    cell_fill_mode="ROWS",
+                    cell_fill_color=light_grey
+                ) as table:
+                    for i, row_data in enumerate(summary_data):
+                        row = table.row()
+                        for cell_data in row_data:
+                            row.cell(cell_data)
+                
+                pdf.ln(5)
+            
             pdf.set_font("Times", "", 10)
             
             # Project statistics table
@@ -396,7 +707,7 @@ class PDFReportGenerator:
                 pdf.set_font("Times", "", 10)
                 
                 # Create table headers for disapproved hours
-                disapproved_col_widths = [25, 25, 15, 40, 85]
+                disapproved_col_widths = [20, 20, 15, 50, 85]
                 disapproved_data = [["Employee", "Date", "Hours", "Description", "Explanation"]]
                 
                 # Add data for each disapproved entry
@@ -411,8 +722,8 @@ class PDFReportGenerator:
                     
                     # Limit description length to fit in table cell
                     description = entry.get('description', '')
-                    if len(description) > 35:
-                        description = description[:32] + "..."
+                    #if len(description) > 35:
+                        #description = description[:32] + "..."
                         
                     disapproved_data.append([
                         employee_name,
@@ -438,6 +749,11 @@ class PDFReportGenerator:
             # Add a page break between projects (except for the last one)
             if list(projects.keys()).index(project) < len(projects) - 1:
                 pdf.add_page()
+        
+        # Add evaluation page if requested
+        if evaluate:
+            evaluation_results, false_positives, false_negatives = evaluate_classification_performance(classified_data)
+            self.add_evaluation_page(pdf, evaluation_results, false_positives, false_negatives)
         
         # Save the PDF file
         pdf.output(output_path)
