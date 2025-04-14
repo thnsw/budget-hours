@@ -128,9 +128,10 @@ def run_pipeline(args: argparse.Namespace) -> None:
             data = load_csv_data(args.input)
         else:
             print("Extracting data from SQL Server...")
-            data = extract_data_for_classification()
+            data = extract_data_for_classification(limit=args.limit)
+            print(f"Extracted {len(data)} records")
         
-        # Extract-only mode
+        # Extract-only mode - Stop here if extract_only is specified
         if args.extract_only:
             output_path = args.output or f"output/extracted_data_{int(time.time())}.csv"
             os.makedirs(os.path.dirname(output_path), exist_ok=True)

@@ -106,14 +106,17 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
     finally:
         engine.dispose()
 
-def extract_data_for_classification() -> List[Dict[Any, Any]]:
+def extract_data_for_classification(limit: int = None) -> List[Dict[Any, Any]]:
     """
     Extract only the data needed for LLM classification
+    
+    Args:
+        limit: Optional limit on number of records to extract
     
     Returns:
         List of dictionaries containing data formatted for LLM classification
     """
-    raw_data = extract_hours_data()
+    raw_data = extract_hours_data(limit=limit)
     
     # Format data for LLM classification - only include fields needed for classification
     classification_data = []
