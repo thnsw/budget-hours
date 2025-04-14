@@ -7,6 +7,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from datetime import datetime
 from fpdf import FPDF
 from fpdf.fonts import FontFace
+from fpdf.outline import OutlineSection
+from fpdf.outline import TableOfContents
 from PIL import Image
 
 # Import the llm_describer module
@@ -311,9 +313,19 @@ class PDFReportGenerator:
         pdf.set_y(self.header_height + y_position)
         pdf.cell(0, 10, "Hours Approval Report", ln=True, align="C")
         
-        # Add overall statistics section (removed Classification Performance Metrics section)
+        # Add table of contents page
         pdf.add_page()
         pdf.set_font("Times", "B", 16)
+        pdf.cell(0, 10, "Table of Contents", ln=True, align="C")
+        pdf.set_font("Times", size=8)
+        
+        # Create and insert ToC
+        toc = TableOfContents()
+        pdf.insert_toc_placeholder(toc.render_toc, allow_extra_pages=True)
+        
+        # Add overall statistics section
+        pdf.set_font("Times", "B", 16)
+        pdf.start_section(name="Overall Statistics", level=0)
         pdf.cell(0, 10, "Overall Statistics", ln=True)
         pdf.set_font("Times", "", 10)
         pdf.ln(5)
@@ -389,6 +401,7 @@ class PDFReportGenerator:
         # Add Customer Statistics section
         pdf.ln(10)
         pdf.set_font("Times", "B", 14)
+        pdf.start_section(name="Customer Statistics", level=0)
         pdf.cell(0, 10, "Customer Statistics", ln=True)
         pdf.set_font("Times", "", 10)
         
@@ -433,58 +446,11 @@ class PDFReportGenerator:
                 for cell_data in row_data:
                     row.cell(cell_data)
         
-        """# Add detailed customer breakdown
-        pdf.ln(10)
-        pdf.set_font("Times", "B", 14)
-        pdf.cell(0, 10, "Customer Hour Distribution", ln=True)
-        
-        # For each customer, show a detailed breakdown of billable/non-billable hours
-        for customer, stats in customer_stats.items():
-            pdf.ln(5)
-            pdf.set_font("Times", "B", 12)
-            pdf.cell(0, 10, f"{customer}", ln=True)
-            pdf.set_font("Times", "", 10)
-            
-            total_hours = stats['total_hours']
-            approved_hours = stats['approved_hours']
-            not_approved_hours = stats['not_approved_hours']
-            
-            # Calculate percentages
-            approved_pct = (approved_hours / total_hours) * 100 if total_hours > 0 else 0
-            not_approved_pct = (not_approved_hours / total_hours) * 100 if total_hours > 0 else 0
-            
-            # Create hour distribution table
-            hour_distribution_col_widths = [80, 30, 30, 30]
-            hour_data = [
-                ["Hour Type", "Hours", "%", "Projects"],
-                ["Total Hours", f"{total_hours:.2f}", "100%", str(len(stats['projects']))],
-                ["Billable Hours", f"{approved_hours:.2f}", f"{approved_pct:.1f}%", ""],
-                ["Non-billable Hours", f"{not_approved_hours:.2f}", f"{not_approved_pct:.1f}%", ""]
-            ]
-            
-            with pdf.table(
-                col_widths=hour_distribution_col_widths,
-                text_align=["LEFT", "CENTER", "CENTER", "CENTER"],
-                line_height=6,
-                headings_style=heading_style,
-                cell_fill_mode="ROWS",
-                cell_fill_color=light_grey
-            ) as table:
-                for i, row_data in enumerate(hour_data):
-                    row = table.row()
-                    for cell_data in row_data:
-                        row.cell(cell_data)
-            
-            # List projects for this customer if there are not too many
-            if len(stats['projects']) <= 5:
-                pdf.ln(3)
-                pdf.set_font("Times", "I", 10)
-                pdf.cell(0, 10, f"Projects: {', '.join(stats['projects'])}", ln=True)"""
-        
         # Add customer overview section
         for customer_name, customer in customer_data.items():
             pdf.add_page()
             pdf.set_font("Times", "B", 16)
+            pdf.start_section(name=f"Customer: {customer_name}", level=1)
             pdf.cell(0, 10, f"Customer Overview: {customer_name}", ln=True)
             
             # Add customer description/summary if available
@@ -534,193 +500,190 @@ class PDFReportGenerator:
                     row = table.row()
                     for cell_data in row_data:
                         row.cell(cell_data)
-        
-        # Add statistics by project section
-        pdf.add_page()
-        pdf.set_font("Times", "B", 16)
-        pdf.cell(0, 10, "Statistics by Project", ln=True)
-        
-        # Define column widths for project statistics tables
-        project_stats_col_widths = [80, 50, 50]
-        employee_stats_col_widths = [60, 20, 30, 40, 40]
-        
-        # Add a section for each project
-        for project, stats in projects.items():
-            pdf.ln(5)
-            pdf.set_font("Times", "B", 14)
-            pdf.cell(0, 10, f"Project: {project}", ln=True)
-            
-            # Add project description/summary if available
-            if project in project_data and 'description' in project_data[project]:
-                pdf.set_font("Times", "I", 10)
-                pdf.multi_cell(0, 5, project_data[project]['description'])
-                pdf.ln(3)
-            
-            # Create project summary table with key metrics
-            if project in project_data:
-                pdf.set_font("Times", "B", 12)
-                pdf.cell(0, 10, "Project Summary", ln=True)
+                        
+            # For each project under this customer, add detailed project information on subsequent pages
+            for project_name, project_stats in customer['projects'].items():
+                # Check if this project exists in projects dictionary
+                if project_name not in projects:
+                    continue
+                    
+                # Add a new page for the project
+                pdf.add_page()
+                pdf.set_font("Times", "B", 14)
+                pdf.start_section(name=f"Project: {project_name}", level=2)
+                pdf.cell(0, 10, f"Project: {project_name} (Customer: {customer_name})", ln=True)
+                
+                # Add project description/summary if available
+                if project_name in project_data and 'description' in project_data[project_name]:
+                    pdf.set_font("Times", "I", 10)
+                    pdf.multi_cell(0, 5, project_data[project_name]['description'])
+                    pdf.ln(3)
+                
+                # Create project summary table with key metrics
+                if project_name in project_data:
+                    pdf.set_font("Times", "B", 12)
+                    pdf.start_section(name=f"Project Summary: {project_name}", level=3)
+                    pdf.cell(0, 10, "Project Summary", ln=True)
+                    pdf.set_font("Times", "", 10)
+                    
+                    # Project summary table
+                    project_summary_col_widths = [60, 120]
+                    
+                    # Get employee names (limited to first 3)
+                    employees = project_data[project_name].get('employees', [])
+                    employees_str = ", ".join([emp[:3] for emp in employees]) if employees else "No employees listed"
+                    
+                    # Calculate billable/non-billable percentages
+                    total_hours = project_data[project_name].get('total_hours', 0)
+                    billable_hours = project_data[project_name].get('billable_hours', 0)
+                    non_billable_hours = project_data[project_name].get('non_billable_hours', 0)
+                    billable_pct = (billable_hours / total_hours) * 100 if total_hours > 0 else 0
+                    non_billable_pct = 100 - billable_pct
+                    
+                    # Calculate approval percentages
+                    approved_hours = project_data[project_name].get('approved_hours', 0)
+                    not_approved_hours = project_data[project_name].get('not_approved_hours', 0)
+                    approved_pct = (approved_hours / total_hours) * 100 if total_hours > 0 else 0
+                    not_approved_pct = (not_approved_hours / total_hours) * 100 if total_hours > 0 else 0
+                    
+                    # Create summary table
+                    summary_data = [
+                        ["Metric", "Value"],
+                        ["Key Employees", employees_str],
+                        ["Total Hours", f"{total_hours:.2f}"],
+                        ["Billable Hours", f"{billable_hours:.2f} ({billable_pct:.1f}%)"],
+                        ["Non-billable Hours", f"{non_billable_hours:.2f} ({non_billable_pct:.1f}%)"],
+                        ["Approved Hours", f"{approved_hours:.2f} ({approved_pct:.1f}%)"],
+                        ["Not Approved Hours", f"{not_approved_hours:.2f} ({not_approved_pct:.1f}%)"]
+                    ]
+                    
+                    with pdf.table(
+                        col_widths=project_summary_col_widths,
+                        text_align=["LEFT", "LEFT"],
+                        line_height=6,
+                        headings_style=heading_style,
+                        cell_fill_mode="ROWS",
+                        cell_fill_color=light_grey
+                    ) as table:
+                        for i, row_data in enumerate(summary_data):
+                            row = table.row()
+                            for cell_data in row_data:
+                                row.cell(cell_data)
+                    
+                    pdf.ln(5)
+                
+                # Project statistics (from projects dictionary)
+                stats = projects[project_name]
+                project_stats_col_widths = [80, 50, 50]
+                
                 pdf.set_font("Times", "", 10)
                 
-                # Project summary table
-                project_summary_col_widths = [60, 120]
-                
-                # Get employee names (limited to first 3)
-                employees = project_data[project].get('employees', [])
-                employees_str = ", ".join([emp[:3] for emp in employees]) if employees else "No employees listed"
-                
-                # Calculate billable/non-billable percentages
-                total_hours = project_data[project].get('total_hours', 0)
-                billable_hours = project_data[project].get('billable_hours', 0)
-                non_billable_hours = project_data[project].get('non_billable_hours', 0)
-                billable_pct = (billable_hours / total_hours) * 100 if total_hours > 0 else 0
-                non_billable_pct = 100 - billable_pct
-                
-                # Calculate approval percentages
-                approved_hours = project_data[project].get('approved_hours', 0)
-                not_approved_hours = project_data[project].get('not_approved_hours', 0)
-                approved_pct = (approved_hours / total_hours) * 100 if total_hours > 0 else 0
-                not_approved_pct = (not_approved_hours / total_hours) * 100 if total_hours > 0 else 0
-                
-                # Create summary table
-                summary_data = [
-                    ["Metric", "Value"],
-                    ["Key Employees", employees_str],
-                    ["Total Hours", f"{total_hours:.2f}"],
-                    ["Billable Hours", f"{billable_hours:.2f} ({billable_pct:.1f}%)"],
-                    ["Non-billable Hours", f"{non_billable_hours:.2f} ({non_billable_pct:.1f}%)"],
-                    ["Approved Hours", f"{approved_hours:.2f} ({approved_pct:.1f}%)"],
-                    ["Not Approved Hours", f"{not_approved_hours:.2f} ({not_approved_pct:.1f}%)"]
+                # Project statistics table
+                data = [
+                    ["Metric", "Value", "Percentage"],
+                    ["Total Entries", str(stats['entries']), "100%"],
+                    ["Total Hours", f"{stats['total_hours']:.2f}", "100%"],
+                    ["Approved Hours", f"{stats['approved_hours_predicted']:.2f}", 
+                     f"{stats['approved_hours_predicted']/stats['total_hours']*100:.1f}%" if stats['total_hours'] > 0 else "0%"],
+                    ["Not Approved Hours", f"{stats['not_approved_hours_predicted']:.2f}", 
+                     f"{stats['not_approved_hours_predicted']/stats['total_hours']*100:.1f}%" if stats['total_hours'] > 0 else "0%"]
                 ]
                 
                 with pdf.table(
-                    col_widths=project_summary_col_widths,
-                    text_align=["LEFT", "LEFT"],
+                    col_widths=project_stats_col_widths,
+                    text_align=["LEFT", "CENTER", "CENTER"],
                     line_height=6,
                     headings_style=heading_style,
                     cell_fill_mode="ROWS",
                     cell_fill_color=light_grey
                 ) as table:
-                    for i, row_data in enumerate(summary_data):
+                    for i, row_data in enumerate(data):
                         row = table.row()
                         for cell_data in row_data:
                             row.cell(cell_data)
                 
-                pdf.ln(5)
-            
-            pdf.set_font("Times", "", 10)
-            
-            # Project statistics table
-            data = [
-                ["Metric", "Value", "Percentage"],
-                ["Total Entries", str(stats['entries']), "100%"],
-                ["Total Hours", f"{stats['total_hours']:.2f}", "100%"],
-                ["Approved Hours", f"{stats['approved_hours_predicted']:.2f}", 
-                 f"{stats['approved_hours_predicted']/stats['total_hours']*100:.1f}%" if stats['total_hours'] > 0 else "0%"],
-                ["Not Approved Hours", f"{stats['not_approved_hours_predicted']:.2f}", 
-                 f"{stats['not_approved_hours_predicted']/stats['total_hours']*100:.1f}%" if stats['total_hours'] > 0 else "0%"]
-            ]
-            
-            with pdf.table(
-                col_widths=project_stats_col_widths,
-                text_align=["LEFT", "CENTER", "CENTER"],
-                line_height=6,
-                headings_style=heading_style,
-                cell_fill_mode="ROWS",
-                cell_fill_color=light_grey
-            ) as table:
-                for i, row_data in enumerate(data):
-                    row = table.row()
-                    for cell_data in row_data:
-                        row.cell(cell_data)
-            
-            # Employee statistics within project
-            if project in project_employees and project_employees[project]:
-                pdf.ln(5)
-                pdf.set_font("Times", "B", 12)
-                pdf.cell(0, 10, "Employee Statistics", ln=True)
-                pdf.set_font("Times", "", 10)
-                
-                # Create table headers
-                employee_data = [["Employee", "Entries", "Total Hours", "Approved Hours", "Not Approved Hours"]]
-                
-                # Add data for each employee
-                for employee, emp_stats in project_employees[project].items():
-                    employee_data.append([
-                        employee,
-                        str(emp_stats['entries']),
-                        f"{emp_stats['total_hours']:.2f}",
-                        f"{emp_stats['approved_hours_predicted']:.2f}",
-                        f"{emp_stats['not_approved_hours_predicted']:.2f}"
-                    ])
-                
-                with pdf.table(
-                    col_widths=employee_stats_col_widths,
-                    text_align=["LEFT", "CENTER", "CENTER", "CENTER", "CENTER"],
-                    line_height=6,
-                    headings_style=heading_style,
-                    cell_fill_mode="ROWS",
-                    cell_fill_color=light_grey
-                ) as table:
-                    for i, row_data in enumerate(employee_data):
-                        row = table.row()
-                        for cell_data in row_data:
-                            row.cell(cell_data)
-            
-            # Add disapproved hours details table
-            disapproved_entries = [entry for entry in classified_data 
-                                  if entry.get('project_name') == project 
-                                  and entry.get('is_approved_predicted') is False]
-            
-            if disapproved_entries:
-                pdf.ln(10)
-                pdf.set_font("Times", "B", 12)
-                pdf.cell(0, 10, "Disapproved Hours Detail", ln=True)
-                pdf.set_font("Times", "", 10)
-                
-                # Create table headers for disapproved hours
-                disapproved_col_widths = [20, 20, 15, 50, 85]
-                disapproved_data = [["Employee", "Date", "Hours", "Description", "Explanation"]]
-                
-                # Add data for each disapproved entry
-                for entry in disapproved_entries:
-                    # Limit Employee name to 3 characters
-                    employee_name = entry.get('employee_name', '')[:3]
-
-                    # Limit explanation length to fit in table cell
-                    explanation = entry.get('classification_reasoning', '')
-                    #if len(explanation) > 80:
-                        #explanation = explanation[:77] + "..."
+                # Employee statistics within project
+                if project_name in project_employees and project_employees[project_name]:
+                    pdf.ln(5)
+                    pdf.set_font("Times", "B", 12)
+                    pdf.start_section(name=f"Employee Statistics: {project_name}", level=3)
+                    pdf.cell(0, 10, "Employee Statistics", ln=True)
+                    pdf.set_font("Times", "", 10)
                     
-                    # Limit description length to fit in table cell
-                    description = entry.get('description', '')
-                    #if len(description) > 35:
-                        #description = description[:32] + "..."
-                        
-                    disapproved_data.append([
-                        employee_name,
-                        str(entry.get('date', 'N/A')),
-                        f"{float(entry.get('hours', 0)):.2f}",
-                        description,
-                        explanation
-                    ])
+                    # Create table headers
+                    employee_stats_col_widths = [60, 20, 30, 40, 40]
+                    employee_data = [["Employee", "Entries", "Total Hours", "Approved Hours", "Not Approved Hours"]]
+                    
+                    # Add data for each employee
+                    for employee, emp_stats in project_employees[project_name].items():
+                        employee_data.append([
+                            employee,
+                            str(emp_stats['entries']),
+                            f"{emp_stats['total_hours']:.2f}",
+                            f"{emp_stats['approved_hours_predicted']:.2f}",
+                            f"{emp_stats['not_approved_hours_predicted']:.2f}"
+                        ])
+                    
+                    with pdf.table(
+                        col_widths=employee_stats_col_widths,
+                        text_align=["LEFT", "CENTER", "CENTER", "CENTER", "CENTER"],
+                        line_height=6,
+                        headings_style=heading_style,
+                        cell_fill_mode="ROWS",
+                        cell_fill_color=light_grey
+                    ) as table:
+                        for i, row_data in enumerate(employee_data):
+                            row = table.row()
+                            for cell_data in row_data:
+                                row.cell(cell_data)
                 
-                with pdf.table(
-                    col_widths=disapproved_col_widths,
-                    text_align=["LEFT", "LEFT", "CENTER", "LEFT", "LEFT"],
-                    line_height=7,
-                    headings_style=heading_style,
-                    cell_fill_mode="ROWS",
-                    cell_fill_color=light_grey
-                ) as table:
-                    for i, row_data in enumerate(disapproved_data):
-                        row = table.row()
-                        for cell_data in row_data:
-                            row.cell(cell_data)
-            
-            # Add a page break between projects (except for the last one)
-            if list(projects.keys()).index(project) < len(projects) - 1:
-                pdf.add_page()
+                # Add disapproved hours details table
+                disapproved_entries = [entry for entry in classified_data 
+                                      if entry.get('project_name') == project_name 
+                                      and entry.get('is_approved_predicted') is False]
+                
+                if disapproved_entries:
+                    pdf.ln(10)
+                    pdf.set_font("Times", "B", 12)
+                    pdf.start_section(name=f"Disapproved Hours: {project_name}", level=3)
+                    pdf.cell(0, 10, "Disapproved Hours Detail", ln=True)
+                    pdf.set_font("Times", "", 10)
+                    
+                    # Create table headers for disapproved hours
+                    disapproved_col_widths = [20, 20, 15, 50, 85]
+                    disapproved_data = [["Employee", "Date", "Hours", "Description", "Explanation"]]
+                    
+                    # Add data for each disapproved entry
+                    for entry in disapproved_entries:
+                        # Limit Employee name to 3 characters
+                        employee_name = entry.get('employee_name', '')[:3]
+
+                        # Limit explanation length to fit in table cell
+                        explanation = entry.get('classification_reasoning', '')
+                        
+                        # Limit description length to fit in table cell
+                        description = entry.get('description', '')
+                        
+                        disapproved_data.append([
+                            employee_name,
+                            str(entry.get('date', 'N/A')),
+                            f"{float(entry.get('hours', 0)):.2f}",
+                            description,
+                            explanation
+                        ])
+                    
+                    with pdf.table(
+                        col_widths=disapproved_col_widths,
+                        text_align=["LEFT", "LEFT", "CENTER", "LEFT", "LEFT"],
+                        line_height=7,
+                        headings_style=heading_style,
+                        cell_fill_mode="ROWS",
+                        cell_fill_color=light_grey
+                    ) as table:
+                        for i, row_data in enumerate(disapproved_data):
+                            row = table.row()
+                            for cell_data in row_data:
+                                row.cell(cell_data)
         
         # Save the PDF file
         pdf.output(output_path)
