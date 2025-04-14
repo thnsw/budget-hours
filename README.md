@@ -7,7 +7,7 @@ This project extracts time entries from Microsoft SQL Server, uses Azure OpenAI 
 - [X] Shorten Employee in 'Disapproved hours detail'
 - [X] Add llm_describer.py that describes project performance
 - [X] Add customer llm call to describ customer performance
-- [ ] Add business use-case as the 2nd page
+- [ ] Add automated prompt optimization to generate prompt (https://arxiv.org/abs/2305.03495 https://github.com/Eladlev/AutoPrompt)
 - [ ] Add table of contents with the following structure: Overall and customer are first in the hierarchy. Projects is a sub-section below each customer.
 - [ ] Update overall statistics.
 
