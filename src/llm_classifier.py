@@ -61,12 +61,12 @@ Return your response as a valid JSON object with the following structure:
     "reasoning": "One sentence explaning your decision based on the input data."
 }
 
-Focus on:
+Primary focus:
 - Hours containing ticket numbers (#) in the description and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
 - Hours containing customer names  in the description and registered as non-billable (Is Billable: 0) should be disapproved (low approval probability), as they indicate potential billing opportunities
 - External hours spent on customer work but registered as non-billable should be disapproved if the description does not explain why it is non-billable
-- Description consistency with project/task and comprehensiveness of task description
-- If the description is related to AFC, ESG, FCC, data, and analytics, then the work is related to SolitWork's services.
+Secondary focus:
+- If the description is comprehensive it suggests billable work and should indicate higher approval probability.
 
 Example 1 Input:
 Employee: Alice
