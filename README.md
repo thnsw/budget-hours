@@ -49,9 +49,9 @@ The application takes several command-line arguments:
 
 ## Docker Configuration
 
-The default command in the docker-compose.yml runs with the following options:
-```
---summary --output /app/output/classified_hours.csv --summary-output /app/output/summary_report.pdf
+The default test command with limit and summary:
+```bash
+docker-compose run --rm billable-hours-classifier --limit 1 --summary
 ```
 
 You can modify these options in the docker-compose.yml file to suit your needs.
