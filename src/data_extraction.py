@@ -3,6 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from typing import List, Dict, Any
+from datetime import datetime, timedelta
 
 def create_connection():
     """Create a connection to the SQL Server database using environment variables"""
@@ -34,14 +35,18 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
     """
     engine = create_connection()
     
+    # Calculate the date 7 days ago
+    seven_days_ago = datetime.now() - timedelta(days=7)
+    start_date_str = seven_days_ago.strftime('%Y%m%d')
+
     # Query to extract latest updated registered hour using DW_ID and newest DW_Batch_Created. 
     # Hours is greater than 0 to avoid latest negation post.
     query = """
 	WITH LatestBillableEntries AS (
 		SELECT
+			f.Fact_DW_ID,
 			f.Hours,
 			f.Date,
-			p.ProjectID,
 			p.ProjectName,
 			t.TaskName,
 			p.IsBillable AS ProjectIsBillable,
@@ -77,7 +82,7 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
 	SELECT * FROM LatestBillableEntries
 	WHERE
 		RowNum = 1
-		AND Date like '20250305'
+		AND Date >= :start_date
 		--AND ProjectName = 'Conscia Support'
 		AND (CustomerName like '%PINDSTRUP MOSEBRUG A/S%' OR CustomerName like 'SW CST 3' OR CustomerName like 'SØSTRENE GRENES IMPORT A/S')
 		AND TaskName not in ('Barsel', 'Sygdom // Sickness')
@@ -97,9 +102,10 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
     
     try:
         with engine.connect() as connection:
-            result = connection.execute(text(query))
+            # Pass start_date as a parameter
+            result = connection.execute(text(query), {"start_date": start_date_str})
             data = [dict(row._mapping) for row in result]
-            print(f"SQL query returned {len(data)} rows")
+            print(f"SQL query returned {len(data)} rows for dates >= {start_date_str}")
             return data
     except Exception as e:
         raise Exception(f"Error extracting data: {str(e)}")
@@ -133,6 +139,7 @@ def extract_data_for_classification(limit: int = None) -> List[Dict[Any, Any]]:
             description = str(description).replace('\\n', ' ').replace('\\r', ' ').replace('\\t', ' ')
             
         formatted_entry = {
+            "fact_dw_id": entry.get("Fact_DW_ID"),
             "employee_name": entry.get("EmployeeName"),
             "project_name": entry.get("ProjectName"),
             "customer_name": entry.get("CustomerName"),
@@ -143,8 +150,6 @@ def extract_data_for_classification(limit: int = None) -> List[Dict[Any, Any]]:
             "billable_amount": entry.get("BillableAmount"),
             "date": entry.get("Date"),
             # Include all original fields to ensure no data is lost
-            "project_id": entry.get("ProjectID"),
-            "dw_id": entry.get("DW_ID"),
             "is_billable_key": entry.get("IsBillableKey"),
             # Store actual value for later comparison but don't include in LLM input
             "is_approved_key": entry.get("IsApprovedKey")

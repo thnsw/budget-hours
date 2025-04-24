@@ -5,6 +5,7 @@ from typing import Dict, Any, Union, List, Optional
 from dotenv import load_dotenv
 from openai import AzureOpenAI
 from azure.core.credentials import AzureKeyCredential
+from datetime import datetime
 
 class ClassificationError(Exception):
     """Exception raised when classification fails"""
@@ -38,21 +39,14 @@ def classify_hours(hour_entry: Dict[str, Any], max_retries: int = 3) -> Dict[str
         max_retries: Maximum number of retries for malformed JSON responses
     
     Returns:
-        Dictionary with original data plus classification results
+        Dictionary with original data plus classification results and metadata
     """
     client = initialize_client()
     model_deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
+    environment = os.getenv('APP_ENVIRONMENT', 'development')
     
-    # Format the hour entry for the prompt
-    prompt = format_classification_prompt(hour_entry)
-    
-    for attempt in range(max_retries):
-        try:
-            response = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """You are an hour approval classifier for SolitWork, a IT consulting/Saas company that delivers financial, ESG, and analytics services.
+    # Define prompts
+    system_prompt = """You are an hour approval classifier for SolitWork, a IT consulting/Saas company that delivers financial, ESG, and analytics services.
 Your task is to predict approval probability for registered hours.
 
 Return your response as a valid JSON object with the following structure:
@@ -113,20 +107,36 @@ Example 3 Output:
     "reasoning": "Customer work with ticket number marked as non-billable without explanation why it shouldn't be billed."
 }
 """
+    user_prompt = format_classification_prompt(hour_entry)
+
+    start_time = time.perf_counter()
+    prediction_timestamp = datetime.utcnow()
+
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": system_prompt
                     },
                     {
                         "role": "user",
-                        "content": prompt
+                        "content": user_prompt
                     }
                 ],
-                max_tokens=200, # Reduced max_tokens as the float output is shorter
+                max_tokens=200,
                 temperature=0.1,
                 model=model_deployment,
-                response_format={"type": "json_object"} # Enforce JSON output
+                response_format={"type": "json_object"}
             )
-            
+
+            end_time = time.perf_counter()
+            latency_ms = (end_time - start_time) * 1000
+
             content = response.choices[0].message.content
-            
+            usage_info = response.usage
+
             # Try to parse the JSON response
             try:
                 classification_result = extract_json_from_response(content)
@@ -137,13 +147,21 @@ Example 3 Output:
                 if not isinstance(classification_result["approval_probability"], (int, float)) or not (0 <= classification_result["approval_probability"] <= 1):
                      raise ValueError("Invalid value for 'approval_probability'. Must be a float between 0 and 1.")
 
-                # Add the classification to the original entry
+                # Add the classification and metadata to the original entry
                 result = hour_entry.copy()
                 approval_probability = float(classification_result["approval_probability"])
                 result.update({
                     "is_approved_predicted": approval_probability > 0.5,
                     "classification_confidence": approval_probability,
-                    "classification_reasoning": classification_result["reasoning"]
+                    "classification_reasoning": classification_result["reasoning"],
+                    "PromptSystem": system_prompt,
+                    "PromptUser": user_prompt,
+                    "ModelName": model_deployment,
+                    "PredictionTimestamp": prediction_timestamp,
+                    "PredictionLatencyMS": latency_ms,
+                    "TokenCountPrompt": usage_info.prompt_tokens if usage_info else None,
+                    "TokenCountCompletion": usage_info.completion_tokens if usage_info else None,
+                    "Environment": environment
                 })
                 
                 # Preserve the actual IsApprovedKey value for evaluation if it exists
@@ -152,13 +170,13 @@ Example 3 Output:
                 
                 return result
                 
-            except (json.JSONDecodeError, KeyError) as e:
+            except (json.JSONDecodeError, KeyError, ValueError) as e:
                 if attempt < max_retries - 1:
                     # Exponential backoff
                     time.sleep(2 ** attempt)
                     continue
                 else:
-                    raise ClassificationError(f"Failed to parse classification after {max_retries} attempts: {str(e)}")
+                    raise ClassificationError(f"Failed to parse or validate classification after {max_retries} attempts: {str(e)}")
                 
         except Exception as e:
             if attempt < max_retries - 1:
@@ -166,7 +184,7 @@ Example 3 Output:
                 time.sleep(2 ** attempt)
                 continue
             else:
-                raise ClassificationError(f"Classification failed after {max_retries} attempts: {str(e)}")
+                raise ClassificationError(f"Classification API call failed after {max_retries} attempts: {str(e)}")
     
     # This should not be reached due to the exception in the final retry
     raise ClassificationError("Classification failed with an unknown error")
@@ -206,7 +224,7 @@ def format_classification_prompt(hour_entry: Dict[str, Any]) -> str:
     Task: {hour_entry.get('task_name')}
     Hours: {hour_entry.get('hours')}
     Project Is Billable: {hour_entry.get('project_is_billable')}
-    Is Billable: {hour_entry.get('is_billable_key')}
+    Registered hour is billable: {hour_entry.get('is_billable_key')}
     Billable Amount: {hour_entry.get('billable_amount')}
     Description: {hour_entry.get('description')}
     """
