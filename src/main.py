@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from data_extraction import extract_data_for_classification
 from llm_classifier import classify_batch
 from output_generator import generate_csv_output, generate_summary_report
+from upload import upload_data
 
 def setup_parser() -> argparse.ArgumentParser:
     """Set up command line argument parser"""
@@ -51,6 +52,27 @@ def setup_parser() -> argparse.ArgumentParser:
         "--summary-output",
         type=str,
         help="Path for the summary report output"
+    )
+    
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Upload classified data to SQL Server"
+    )
+    
+    parser.add_argument(
+        "--upload-mode",
+        type=str,
+        choices=["upload", "test"],
+        default="test",
+        help="Upload mode: 'upload' for SQL Server, 'test' for saving as CSV"
+    )
+    
+    parser.add_argument(
+        "--upload-dir",
+        type=str,
+        default="output",
+        help="Directory to save CSV in test upload mode"
     )
     
     parser.add_argument(
@@ -160,6 +182,17 @@ def run_pipeline(args: argparse.Namespace) -> None:
         if args.summary:
             summary_path = generate_summary_report(classified_data, output_path=args.summary_output)
             print(f"Summary report generated: {summary_path}")
+        
+        # Upload data if requested
+        if args.upload:
+            print(f"Uploading data in {args.upload_mode} mode...")
+            result = upload_data(
+                classified_data, 
+                mode=args.upload_mode,
+                output_dir=args.upload_dir
+            )
+            if args.upload_mode == "upload" and result:
+                print("Data successfully uploaded to SQL Server.")
         
         elapsed_time = time.time() - start_time
         print(f"Pipeline completed in {elapsed_time:.2f} seconds")
