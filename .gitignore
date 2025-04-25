@@ -10,3 +10,5 @@ __pycache__
 *.pywz
 *.pyzw
 .cursor
+archive/*
+*.ipynb

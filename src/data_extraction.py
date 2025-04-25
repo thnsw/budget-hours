@@ -52,27 +52,24 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
 			p.IsBillable AS ProjectIsBillable,
 			c.CustomerName,
 			d.DescriptionID AS Description,
-			f.BillableAmount,
-			f.BillableRate,
 			f.IsBillableKey,
-			f.IsApprovedKey,
 			e.EmployeeName,
 			f.DW_ID,
 			f.DW_Batch_Created,
 			ROW_NUMBER() OVER (PARTITION BY f.DW_ID ORDER BY f.DW_Batch_Created DESC) AS RowNum
 		FROM
 			[PowerBIData].[vPowerBiData_Harvest_Harvest_data_All] f
-		JOIN
+		LEFT JOIN
 			[PowerBIData].[DimProject_Tabular_Flat] p ON f.ProjectKey = p.ProjectKey
-		JOIN
+		LEFT JOIN
 			[PowerBIData].[DimCustomer_Tabular_Flat] c ON f.CustomerKey = c.CustomerKey
-		JOIN
+		LEFT JOIN
 			[PowerBIData].[DimOrganization_Tabular_Flat] o ON f.OrganizationKey = o.OrganizationKey
-		JOIN
+		LEFT JOIN
 			[PowerBIData].[DimDescription] d ON f.DescriptionKey = d.DescriptionKey
-		JOIN
+		LEFT JOIN
 			[PowerBIData].[DimTask_Tabular_Flat] t on f.TaskKey = t.TaskKey
-		JOIN
+		LEFT JOIN
 			[PowerBIData].[DimPeriod] period ON f.Period = period.Period
 		LEFT JOIN
 			(SELECT DISTINCT EmployeeKey, EmployeeName FROM [PowerBIData].[DimEmployee_Tabular_Flat]) e ON f.EmployeeKey = e.EmployeeKey
@@ -83,16 +80,10 @@ def extract_hours_data(limit: int = None, debug: bool = True) -> List[Dict[Any, 
 	WHERE
 		RowNum = 1
 		AND Date >= :start_date
-		--AND ProjectName = 'Conscia Support'
 		AND (CustomerName like '%PINDSTRUP MOSEBRUG A/S%' OR CustomerName like 'SW CST 3' OR CustomerName like 'SØSTRENE GRENES IMPORT A/S')
 		AND TaskName not in ('Barsel', 'Sygdom // Sickness')
 		AND (EmployeeName like 'THN - Thomas Nissen' OR EmployeeName like 'PRO - Peter Rokkjær' OR EmployeeName like 'MGU - Morten Gunnersen')
-		--AND CustomerName like '%cst%'
-		--AND Hours > 0
-		--AND IsBillableKey = 1
-		--AND IsApprovedKey = 0
-		--AND DW_ID = 2617911362
-		--AND Description like '%#%'
+		AND IsBillableKey = 0
     """
     
     if limit:
@@ -147,12 +138,9 @@ def extract_data_for_classification(limit: int = None) -> List[Dict[Any, Any]]:
             "description": description,
             "project_is_billable": entry.get("ProjectIsBillable"),
             "task_name": entry.get("TaskName"),
-            "billable_amount": entry.get("BillableAmount"),
             "date": entry.get("Date"),
             # Include all original fields to ensure no data is lost
             "is_billable_key": entry.get("IsBillableKey"),
-            # Store actual value for later comparison but don't include in LLM input
-            "is_approved_key": entry.get("IsApprovedKey")
         }
         classification_data.append(formatted_entry)
     
